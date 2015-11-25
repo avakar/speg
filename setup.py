@@ -10,7 +10,7 @@ setup(
     description='A PEG-based parser interpreter with memoization',
     author='Martin Vejnár',
     author_email='vejnar.martin@gmail.com',
-    url='https://github.com/avakar/pyspeg',
+    url='https://github.com/avakar/speg',
     license='MIT',
 
     packages=['speg'],
