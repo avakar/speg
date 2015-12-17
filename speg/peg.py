@@ -21,7 +21,7 @@ def peg(s, r):
     except _UnexpectedError as e:
         offset = max(p._errors)
         err = p._errors[offset]
-        raise ParseError(err.msg, p._s, offset, err.line, err.col)
+        raise ParseError(err.msg, offset, err.line, err.col)
 
 class _UnexpectedError(RuntimeError):
     def __init__(self, state, expr):
@@ -100,6 +100,15 @@ class _Peg:
 
     def set(self, key, value):
         self._states[-1].vars[key] = value
+
+    def opt(self, *args, **kw):
+        with self:
+            return self(*args, **kw)
+
+    def not_(self, s, *args, **kw):
+        with self:
+            self(s)
+            self.error()
 
     def __enter__(self):
         self._states[-1].committed = False
