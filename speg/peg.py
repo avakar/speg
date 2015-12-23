@@ -7,7 +7,7 @@ class ParseError(Exception):
         self.offset = offset
         self.line = line
         self.col = col
-        super(ParseError, self).__init__(msg, text, offset, line, col)
+        super(ParseError, self).__init__(msg, offset, line, col)
 
 if sys.version_info[0] == 2:
     _basestr = basestring
@@ -21,7 +21,7 @@ def peg(s, r):
     except _UnexpectedError as e:
         offset = max(p._errors)
         err = p._errors[offset]
-        raise ParseError(err.msg, offset, err.line, err.col)
+        raise ParseError(err.msg, s, offset, err.line, err.col)
 
 class _UnexpectedError(RuntimeError):
     def __init__(self, state, expr):
