@@ -95,11 +95,14 @@ class _Peg:
     def get(self, key, default=None):
         for state in self._states[::-1]:
             if key in state.vars:
-                return state.vars[key]
+                return state.vars[key][0]
         return default
 
     def set(self, key, value):
-        self._states[-1].vars[key] = value
+        self._states[-1].vars[key] = value, False
+
+    def set_global(self, key, value):
+        self._states[-1].vars[key] = value, True
 
     def opt(self, *args, **kw):
         with self:
@@ -123,6 +126,16 @@ class _Peg:
     def commit(self):
         cur = self._states[-1]
         prev = self._states[-2]
+
+        for key in cur.vars:
+            val, g = cur.vars[key]
+            if not g:
+                continue
+            if key in prev.vars:
+                prev.vars[key] = val, prev.vars[key][1]
+            else:
+                prev.vars[key] = val, True
+
         prev.pos = cur.pos
         prev.line = cur.line
         prev.col = cur.col
