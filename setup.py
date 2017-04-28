@@ -5,7 +5,7 @@ from setuptools import setup
 
 setup(
     name='speg',
-    version='0.2',
+    version='0.3',
 
     description='A PEG-based parser interpreter with memoization',
     author='Martin Vejnár',
