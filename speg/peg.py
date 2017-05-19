@@ -51,10 +51,11 @@ class _Peg:
 
     def __call__(self, r, *args, **kw):
         if isinstance(r, _basestr):
-            compiled = self._re_cache.get(r)
+            flags = args[0] if args else 0
+            compiled = self._re_cache.get((r, flags))
             if not compiled:
-                compiled = re.compile(r)
-                self._re_cache[r] = compiled
+                compiled = re.compile(r, flags)
+                self._re_cache[r, flags] = compiled
             st = self._states[-1]
             m = compiled.match(self._s[st.pos:])
             if not m:
