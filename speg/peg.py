@@ -1,4 +1,7 @@
-import sys, re
+import re
+import sys
+
+import six
 
 class ParseError(Exception):
     def __init__(self, msg, text, offset, line, col):
@@ -9,19 +12,14 @@ class ParseError(Exception):
         self.col = col
         super(ParseError, self).__init__(msg, offset, line, col)
 
-if sys.version_info[0] == 2:
-    _basestr = basestring
-else:
-    _basestr = str
-
-def peg(s, r):
-    p = _Peg(s)
+def peg(text, root_rule):
+    p = _Peg(text)
     try:
-        return p(r)
-    except _UnexpectedError as e:
+        return p(root_rule)
+    except _UnexpectedError:
         offset = max(p._errors)
         err = p._errors[offset]
-        raise ParseError(err.msg, s, offset, err.line, err.col)
+        raise ParseError(err.msg, text, offset, err.line, err.col)
 
 class _UnexpectedError(RuntimeError):
     def __init__(self, state, expr):
@@ -34,7 +32,7 @@ class _PegState:
         self.line = line
         self.col = col
         self.vars = {}
-        self.commited = False
+        self.committed = False
 
 class _PegError:
     def __init__(self, msg, line, col):
@@ -50,7 +48,7 @@ class _Peg:
         self._re_cache = {}
 
     def __call__(self, r, *args, **kw):
-        if isinstance(r, _basestr):
+        if isinstance(r, six.string_types):
             flags = args[0] if args else 0
             compiled = self._re_cache.get((r, flags))
             if not compiled:

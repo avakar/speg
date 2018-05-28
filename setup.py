@@ -14,4 +14,6 @@ setup(
     license='MIT',
 
     packages=['speg'],
+
+    install_requires=['six']
     )
