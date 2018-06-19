@@ -1,4 +1,4 @@
-# Python bytecode cache
+# bytecode cache
 *.pyc
 __pycache__/
 
@@ -7,8 +7,11 @@ __pycache__/
 /dist/
 /*.egg-info/
 
-# Editor artifacts
+# editor artifacts
 /.vscode/
 /.vs/
 
-/.pytest*
+# test caches
+/.tox/
+/.pytest_cache/
+/.coverage
