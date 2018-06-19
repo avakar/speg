@@ -1,3 +1,14 @@
+# Python bytecode cache
 *.pyc
-*.egg-info
+__pycache__/
+
+# compilation artifacts
+/build/
+/dist/
+/*.egg-info/
+
+# Editor artifacts
+/.vscode/
+/.vs/
+
 /.pytest*
