@@ -1,3 +1,17 @@
+# bytecode cache
 *.pyc
-*.egg-info
-/.pytest*
+__pycache__/
+
+# compilation artifacts
+/build/
+/dist/
+/*.egg-info/
+
+# editor artifacts
+/.vscode/
+/.vs/
+
+# test caches
+/.tox/
+/.pytest_cache/
+/.coverage
