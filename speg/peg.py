@@ -3,23 +3,23 @@ import sys
 
 import six
 
+from .position import Position
+
 class ParseError(Exception):
-    def __init__(self, msg, text, offset, line, col):
+    def __init__(self, msg, text, position):
         self.msg = msg
         self.text = text
-        self.offset = offset
-        self.line = line
-        self.col = col
-        super(ParseError, self).__init__(msg, offset, line, col)
+        self.position = position
+        super(ParseError, self).__init__(msg, text, position)
 
 def peg(text, root_rule):
     p = _Peg(text)
     try:
         return p(root_rule)
     except _UnexpectedError:
-        offset = max(p._errors)
-        err = p._errors[offset]
-        raise ParseError(err.msg, text, offset, err.line, err.col)
+        idx = max(p._errors)
+        err = p._errors[idx]
+        raise ParseError(err.msg, text, err.pos)
 
 def prepare(text):
     return _Peg(text)
@@ -30,27 +30,16 @@ class _UnexpectedError(RuntimeError):
         self.expr = expr
 
 class _PegState:
-    def __init__(self, pos, line, col):
+    def __init__(self, idx, pos):
+        self.idx = idx
         self.pos = pos
-        self.line = line
-        self.col = col
         self.vars = {}
         self.committed = False
 
-    def position(self):
-        return StdPosition(self.pos, self.line, self.col)
-
 class _PegError:
-    def __init__(self, msg, line, col):
+    def __init__(self, msg, pos):
         self.msg = msg
-        self.line = line
-        self.col = col
-
-class StdPosition:
-    def __init__(self, offset, line, col):
-        self.offset = offset
-        self.line = line
-        self.col = col
+        self.pos = pos
 
 class Node:
     def __init__(self, value, start_pos, end_pos):
@@ -59,9 +48,9 @@ class Node:
         self.end_pos = end_pos
 
 class _Peg:
-    def __init__(self, s):
+    def __init__(self, s, position=Position.initial()):
         self._s = s
-        self._states = [_PegState(0, 1, 1)]
+        self._states = [_PegState(0, position)]
         self._errors = {}
         self._re_cache = {}
 
@@ -73,18 +62,13 @@ class _Peg:
                 compiled = re.compile(r, flags)
                 self._re_cache[r, flags] = compiled
             st = self._states[-1]
-            m = compiled.match(self._s[st.pos:])
+            m = compiled.match(self._s[st.idx:])
             if not m:
                 self.error(expr=r, err=kw.get('err'))
 
             ms = m.group(0)
-            st.pos += len(ms)
-            nl_pos = ms.rfind('\n')
-            if nl_pos < 0:
-                st.col += len(ms)
-            else:
-                st.col = len(ms) - nl_pos
-                st.line += ms[:nl_pos].count('\n') + 1
+            st.idx += len(ms)
+            st.pos = st.pos.update(ms)
             return ms
         else:
             kw.pop('err', None)
@@ -97,25 +81,25 @@ class _Peg:
         return Node(value, start_pos, end_pos)
 
     def position(self):
-        return self._states[-1].position()
+        return self._states[-1].pos
 
     def __repr__(self):
-        pos = self._states[-1].pos
+        idx = self._states[-1].idx
         vars = {}
         for st in self._states:
             vars.update(st.vars)
-        return '_Peg(%r, %r)' % (self._s[:pos] + '*' + self._s[pos:], vars)
+        return '_Peg(%r, %r)' % (self._s[:idx] + '*' + self._s[idx:], vars)
 
     @staticmethod
     def eof(p):
-        if p._states[-1].pos != len(p._s):
+        if p._states[-1].idx != len(p._s):
             p.error()
 
     def error(self, err=None, expr=None):
         st = self._states[-1]
         if err is None:
-            err = 'expected {!r}, found {!r}'.format(expr, self._s[st.pos:st.pos+4])
-        self._errors[st.pos] = _PegError(err, st.line, st.col)
+            err = 'expected {!r}, found {!r}'.format(expr, self._s[st.idx:st.idx+4])
+        self._errors[st.idx] = _PegError(err, st.idx)
         raise _UnexpectedError(st, expr)
 
     def get(self, key, default=None):
@@ -141,7 +125,7 @@ class _Peg:
 
     def __enter__(self):
         self._states[-1].committed = False
-        self._states.append(_PegState(self._states[-1].pos, self._states[-1].line, self._states[-1].col))
+        self._states.append(_PegState(self._states[-1].idx, self._states[-1].pos))
 
     def __exit__(self, type, value, traceback):
         if type is None:
@@ -163,8 +147,6 @@ class _Peg:
                 prev.vars[key] = val, True
 
         prev.pos = cur.pos
-        prev.line = cur.line
-        prev.col = cur.col
         prev.committed = True
 
     def __nonzero__(self):
