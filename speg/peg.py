@@ -21,9 +21,6 @@ def peg(text, root_rule):
         err = p._errors[idx]
         raise ParseError(err.msg, text, err.pos)
 
-def prepare(text):
-    return _Peg(text)
-
 class _UnexpectedError(RuntimeError):
     def __init__(self, state, expr):
         self.state = state
@@ -46,6 +43,18 @@ class Node:
         self.value = value
         self.start_pos = start_pos
         self.end_pos = end_pos
+
+class Parser:
+    def __init__(self, text):
+        self._text = text
+
+    def __call__(self, r, *args, **kw):
+        p = _Peg(self._text)
+        return p(r, *args, **kw)
+
+    def parse(self, r, *args, **kw):
+        p = _Peg(self._text)
+        return p.consume(r, *args, **kw)
 
 class _Peg:
     def __init__(self, s, position=Position.initial()):

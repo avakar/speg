@@ -1,1 +1,1 @@
-from .peg import prepare, peg, ParseError
+from .peg import Parser, peg, ParseError
