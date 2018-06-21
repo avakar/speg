@@ -21,6 +21,9 @@ def peg(text, root_rule):
         err = p._errors[offset]
         raise ParseError(err.msg, text, offset, err.line, err.col)
 
+def prepare(text):
+    return _Peg(text)
+
 class _UnexpectedError(RuntimeError):
     def __init__(self, state, expr):
         self.state = state
@@ -34,11 +37,26 @@ class _PegState:
         self.vars = {}
         self.committed = False
 
+    def position(self):
+        return StdPosition(self.pos, self.line, self.col)
+
 class _PegError:
     def __init__(self, msg, line, col):
         self.msg = msg
         self.line = line
         self.col = col
+
+class StdPosition:
+    def __init__(self, offset, line, col):
+        self.offset = offset
+        self.line = line
+        self.col = col
+
+class Node:
+    def __init__(self, value, start_pos, end_pos):
+        self.value = value
+        self.start_pos = start_pos
+        self.end_pos = end_pos
 
 class _Peg:
     def __init__(self, s):
@@ -71,6 +89,15 @@ class _Peg:
         else:
             kw.pop('err', None)
             return r(self, *args, **kw)
+
+    def consume(self, r, *args, **kw):
+        start_pos = self.position()
+        value = self(r, *args, **kw)
+        end_pos = self.position()
+        return Node(value, start_pos, end_pos)
+
+    def position(self):
+        return self._states[-1].position()
 
     def __repr__(self):
         pos = self._states[-1].pos
