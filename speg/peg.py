@@ -3,28 +3,14 @@ import sys
 
 import six
 
+from .errors import ExpectedExprError, UnexpectedExprError, SemanticError
 from .position import Position
 
-class ParseError(Exception):
-    def __init__(self, msg, text, position):
-        self.msg = msg
-        self.text = text
-        self.position = position
-        super(ParseError, self).__init__(msg, text, position)
+class Eof: pass
+eof = Eof()
 
-def peg(text, root_rule):
-    p = _Peg(text)
-    try:
-        return p(root_rule)
-    except _UnexpectedError:
-        idx = max(p._errors)
-        err = p._errors[idx]
-        raise ParseError(err.msg, text, err.pos)
-
-class _UnexpectedError(RuntimeError):
-    def __init__(self, state, expr):
-        self.state = state
-        self.expr = expr
+class _ParseBacktrackError(BaseException):
+    pass
 
 class _PegState:
     def __init__(self, idx, pos):
@@ -32,11 +18,13 @@ class _PegState:
         self.pos = pos
         self.vars = {}
         self.committed = False
+        self.error = None
+        self.error_idx = None
 
-class _PegError:
-    def __init__(self, msg, pos):
-        self.msg = msg
-        self.pos = pos
+    def update_error(self, exc, idx):
+        if self.error is None or self.error_idx < idx:
+            self.error = exc
+            self.error_idx = idx
 
 class Node:
     def __init__(self, value, start_pos, end_pos):
@@ -49,12 +37,18 @@ class Parser:
         self._text = text
 
     def __call__(self, r, *args, **kw):
-        p = _Peg(self._text)
-        return p(r, *args, **kw)
+        return self._parse(lambda p: p(r, *args, **kw))
 
     def parse(self, r, *args, **kw):
+        return self._parse(lambda p: p.consume(r, *args, **kw))
+
+    def _parse(self, fn):
         p = _Peg(self._text)
-        return p.consume(r, *args, **kw)
+        try:
+            return fn(p)
+        except _ParseBacktrackError:
+            assert len(p._states) == 1
+            raise p._states[0].error
 
 class CallstackEntry:
     def __init__(self, idx, position, fn, args, kw):
@@ -68,13 +62,16 @@ class _Peg:
     def __init__(self, s, position=Position.initial()):
         self._s = s
         self._states = [_PegState(0, position)]
-        self._errors = {}
         self._re_cache = {}
         self._callstack = []
 
     def __call__(self, r, *args, **kw):
         st = self._states[-1]
-        if isinstance(r, six.string_types):
+        if r is eof:
+            if st.idx != len(self._s):
+                self._raise(ExpectedExprError(self._s, st.pos, tuple(self._callstack), eof))
+            return ''
+        elif isinstance(r, six.string_types):
             flags = args[0] if args else 0
             compiled = self._re_cache.get((r, flags))
             if not compiled:
@@ -82,7 +79,7 @@ class _Peg:
                 self._re_cache[r, flags] = compiled
             m = compiled.match(self._s[st.idx:])
             if not m:
-                self.error(expr=r, err=kw.get('err'))
+                self._raise(ExpectedExprError(self._s, st.pos, tuple(self._callstack), r))
 
             ms = m.group(0)
             st.idx += len(ms)
@@ -114,15 +111,17 @@ class _Peg:
 
     @staticmethod
     def eof(p):
-        if p._states[-1].idx != len(p._s):
-            p.error()
+        return p(eof)
 
-    def error(self, err=None, expr=None):
+    def error(self, *args, **kw):
         st = self._states[-1]
-        if err is None:
-            err = 'expected {!r}, found {!r}'.format(expr, self._s[st.idx:st.idx+4])
-        self._errors[st.idx] = _PegError(err, st.idx)
-        raise _UnexpectedError(st, expr)
+        exc = SemanticError(self._s, st.pos, tuple(self._callstack), args, kw)
+        self._raise(exc)
+
+    def _raise(self, exc):
+        st = self._states[-1]
+        st.update_error(exc, st.idx)
+        raise _ParseBacktrackError()
 
     def get(self, key, default=None):
         for state in self._states[::-1]:
@@ -140,10 +139,11 @@ class _Peg:
         with self:
             return self(*args, **kw)
 
-    def not_(self, s, *args, **kw):
+    def not_(self, r, *args, **kw):
         with self:
-            self(s)
-            self.error()
+            n = self.consume(r)
+        if self:
+            self._raise(UnexpectedExprError(self._s, n.start_pos, n.end_pos, tuple(self._callstack), r))
 
     def __enter__(self):
         self._states[-1].committed = False
@@ -152,8 +152,14 @@ class _Peg:
     def __exit__(self, type, value, traceback):
         if type is None:
             self.commit()
+        else:
+            cur = self._states[-1]
+            prev = self._states[-2]
+            if cur.error:
+                prev.update_error(cur.error, cur.error_idx)
+
         self._states.pop()
-        return type == _UnexpectedError
+        return type is _ParseBacktrackError
 
     def commit(self):
         cur = self._states[-1]
@@ -167,6 +173,9 @@ class _Peg:
                 prev.vars[key] = val, prev.vars[key][1]
             else:
                 prev.vars[key] = val, True
+
+        cur.error = None
+        cur.error_idx = None
 
         prev.pos = cur.pos
         prev.committed = True

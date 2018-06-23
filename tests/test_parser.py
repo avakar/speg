@@ -1,4 +1,4 @@
-from speg import Parser, peg, ParseError
+from speg import Parser, peg, parse, ParseError, ExpectedExprError
 import pytest
 
 def test_simple():
@@ -82,3 +82,14 @@ def test_parser():
     assert p("") == ""
     assert p("te") == "te"
     assert p(r'...') == "tex"
+
+def test_error():
+    def root(p):
+        p('te')
+        p('xx')
+
+    try:
+        parse("test", root)
+        assert False
+    except ExpectedExprError as e:
+        assert e.position.offset == 2
