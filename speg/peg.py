@@ -56,21 +56,30 @@ class Parser:
         p = _Peg(self._text)
         return p.consume(r, *args, **kw)
 
+class CallstackEntry:
+    def __init__(self, idx, position, fn, args, kw):
+        self.idx = idx
+        self.position = position
+        self.fn = fn
+        self.args = args
+        self.kw = kw
+
 class _Peg:
     def __init__(self, s, position=Position.initial()):
         self._s = s
         self._states = [_PegState(0, position)]
         self._errors = {}
         self._re_cache = {}
+        self._callstack = []
 
     def __call__(self, r, *args, **kw):
+        st = self._states[-1]
         if isinstance(r, six.string_types):
             flags = args[0] if args else 0
             compiled = self._re_cache.get((r, flags))
             if not compiled:
                 compiled = re.compile(r, flags)
                 self._re_cache[r, flags] = compiled
-            st = self._states[-1]
             m = compiled.match(self._s[st.idx:])
             if not m:
                 self.error(expr=r, err=kw.get('err'))
@@ -81,7 +90,11 @@ class _Peg:
             return ms
         else:
             kw.pop('err', None)
-            return r(self, *args, **kw)
+            self._callstack.append(CallstackEntry(st.idx, st.pos, r, args, kw))
+            try:
+                return r(self, *args, **kw)
+            finally:
+                self._callstack.pop()
 
     def consume(self, r, *args, **kw):
         start_pos = self.position()
