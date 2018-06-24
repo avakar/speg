@@ -1,4 +1,4 @@
-from speg import Parser, peg, parse, ParseError, ExpectedExprError
+from speg import Parser, peg, parse, ParseError, ExpectedExprError, UnexpectedExprError, SemanticError
 import pytest
 
 def test_simple():
@@ -93,3 +93,57 @@ def test_error():
         assert False
     except ExpectedExprError as e:
         assert e.position.offset == 2
+
+def test_sema_error():
+    def root(p):
+        p('te')
+        p.error()
+
+    with pytest.raises(SemanticError):
+        parse("test", root)
+
+def test_not():
+    def ident(p):
+        p.not_('[0-9]')
+        return p('[_a-zA-Z0-9]+')
+
+    def num(p):
+        r = p(r'[0-9]+')
+        p.not_(ident)
+        return int(r, 10)
+
+    assert parse('123', num).value == 123
+
+    try:
+        parse('123a', num)
+        assert False
+    except UnexpectedExprError as e:
+        assert e.start_pos.offset == 3
+        assert e.end_pos.offset == 4
+        assert e.rule == ident
+
+def test_error_priority():
+    def root(p):
+        with p:
+            return p(num)
+        return p(undef)
+
+    def num(p):
+        r = p(r'[0-9]+')
+        p('s')
+        return int(r, 10)
+
+    def undef(p):
+        p('x')
+
+    try:
+        parse("t", root)
+        assert False
+    except ExpectedExprError as e:
+        assert e.position.offset == 0
+
+    try:
+        parse("1", root)
+        assert False
+    except ExpectedExprError as e:
+        assert e.position.offset == 1
