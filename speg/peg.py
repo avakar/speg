@@ -33,8 +33,9 @@ class Node:
         self.end_pos = end_pos
 
 class Parser:
-    def __init__(self, text):
+    def __init__(self, text, initial_position=Position()):
         self._text = text
+        self._initial_position = initial_position
 
     def __call__(self, r, *args, **kw):
         return self._parse(lambda p: p(r, *args, **kw))
@@ -43,7 +44,7 @@ class Parser:
         return self._parse(lambda p: p.consume(r, *args, **kw))
 
     def _parse(self, fn):
-        p = _Peg(self._text)
+        p = ParsingState(self._text, self._initial_position)
         try:
             return fn(p)
         except _ParseBacktrackError:
@@ -58,8 +59,8 @@ class CallstackEntry:
         self.args = args
         self.kw = kw
 
-class _Peg:
-    def __init__(self, s, position=Position.initial()):
+class ParsingState(object):
+    def __init__(self, s, position):
         self._s = s
         self._states = [_PegState(0, position)]
         self._re_cache = {}
@@ -83,7 +84,7 @@ class _Peg:
 
             ms = m.group(0)
             st.idx += len(ms)
-            st.pos = st.pos.update(ms)
+            st.pos = st.pos.advanced_by(ms)
             return ms
         else:
             kw.pop('err', None)
@@ -103,11 +104,12 @@ class _Peg:
         return self._states[-1].pos
 
     def __repr__(self):
-        idx = self._states[-1].idx
-        vars = {}
-        for st in self._states:
-            vars.update(st.vars)
-        return '_Peg(%r, %r)' % (self._s[:idx] + '*' + self._s[idx:], vars)
+        ctx_fn = getattr(self._states[-1].pos, 'text_context', None)
+        if ctx_fn is None:
+            return super(ParsingState, self).__repr__()
+
+        ctx, ctx_idx = ctx_fn(self._s)
+        return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(ctx[:ctx_idx], ctx[ctx_idx:]))
 
     @staticmethod
     def eof(p):

@@ -1,4 +1,5 @@
 from speg import Parser, peg, parse, ParseError, ExpectedExprError, UnexpectedExprError, SemanticError
+import speg
 import pytest
 
 def test_simple():
@@ -76,6 +77,16 @@ def test_eof():
         p(p.eof)
     assert peg("", root) is None
 
+def test_failed_eof():
+    def root(p):
+        p('x')
+        p(p.eof)
+    try:
+        peg("xx", root)
+    except ExpectedExprError as e:
+        assert e.position.offset == 1
+        assert e.expr == speg.eof
+
 def test_parser():
     p = Parser("text")
 
@@ -147,3 +158,28 @@ def test_error_priority():
         assert False
     except ExpectedExprError as e:
         assert e.position.offset == 1
+
+def test_repr():
+    def root(p):
+        assert repr(p) == "<speg.ParsingState at '*test'>"
+        p('te')
+        assert repr(p) == "<speg.ParsingState at 'te*st'>"
+
+    parse('test', root)
+
+def test_multiline_repr():
+    pass
+
+def test_custom_repr():
+    class MyPos:
+        def __init__(self, idx):
+            self.idx = idx
+
+        def update(self, text):
+            return MyPos(self.idx + len(text))
+
+    def root(p):
+        assert 'test' not in repr(p)
+
+    pp = Parser("test", MyPos(0))
+    pp.parse(root)
