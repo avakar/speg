@@ -16,10 +16,10 @@ class Position:
             col = text_len - nl_pos
         return Position(offset, line, col)
 
-    def text_context(self, text):
-        suffix = text[self.offset - self.col + 1:]
-        stop = suffix.find('\n')
-        if stop == -1:
-            return suffix, self.col - 1
-        else:
-            return suffix[:stop], self.col - 1
+def get_line_at_position(text, pos):
+    suffix = text[pos.offset - pos.col + 1:]
+    stop = suffix.find('\n')
+    if stop == -1:
+        return suffix, pos.col - 1
+    else:
+        return suffix[:stop], pos.col - 1

@@ -1,4 +1,4 @@
-from speg.position import Position
+from speg.position import Position, get_line_at_position
 
 def test_initial():
     p = Position()
@@ -98,27 +98,27 @@ def test_update_xnlxnlx():
 
 def test_context_prenl():
     p = Position().advanced_by('li')
-    assert p.text_context('line1') == ('line1', 2)
-    assert p.text_context('line1\n') == ('line1', 2)
-    assert p.text_context('line1\nline2') == ('line1', 2)
-    assert p.text_context('line1\nline2\n') == ('line1', 2)
+    assert get_line_at_position('line1', p) == ('line1', 2)
+    assert get_line_at_position('line1\n', p) == ('line1', 2)
+    assert get_line_at_position('line1\nline2', p) == ('line1', 2)
+    assert get_line_at_position('line1\nline2\n', p) == ('line1', 2)
 
 def test_context_atnl():
     p = Position().advanced_by('line1')
-    assert p.text_context('line1') == ('line1', 5)
-    assert p.text_context('line1\n') == ('line1', 5)
-    assert p.text_context('line1\nline2') == ('line1', 5)
-    assert p.text_context('line1\nline2\n') == ('line1', 5)
+    assert get_line_at_position('line1', p) == ('line1', 5)
+    assert get_line_at_position('line1\n', p) == ('line1', 5)
+    assert get_line_at_position('line1\nline2', p) == ('line1', 5)
+    assert get_line_at_position('line1\nline2\n', p) == ('line1', 5)
 
 def test_context_postnl():
     p = Position().advanced_by('line1\n')
-    assert p.text_context('line1\n') == ('', 0)
-    assert p.text_context('line1\nline2') == ('line2', 0)
-    assert p.text_context('line1\nline2\n') == ('line2', 0)
+    assert get_line_at_position('line1\n', p) == ('', 0)
+    assert get_line_at_position('line1\nline2', p) == ('line2', 0)
+    assert get_line_at_position('line1\nline2\n', p) == ('line2', 0)
 
 def test_context_postnlx():
     p = Position().advanced_by('line1\nl')
-    assert p.text_context('line1\nline2') == ('line2', 1)
-    assert p.text_context('line1\nline2\n') == ('line2', 1)
-    assert p.text_context('line1\nline2\nline3') == ('line2', 1)
-    assert p.text_context('line1\nline2\nline3\n') == ('line2', 1)
+    assert get_line_at_position('line1\nline2', p) == ('line2', 1)
+    assert get_line_at_position('line1\nline2\n', p) == ('line2', 1)
+    assert get_line_at_position('line1\nline2\nline3', p) == ('line2', 1)
+    assert get_line_at_position('line1\nline2\nline3\n', p) == ('line2', 1)

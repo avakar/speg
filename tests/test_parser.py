@@ -169,17 +169,3 @@ def test_repr():
 
 def test_multiline_repr():
     pass
-
-def test_custom_repr():
-    class MyPos:
-        def __init__(self, idx):
-            self.idx = idx
-
-        def update(self, text):
-            return MyPos(self.idx + len(text))
-
-    def root(p):
-        assert 'test' not in repr(p)
-
-    pp = Parser("test", MyPos(0))
-    pp.parse(root)

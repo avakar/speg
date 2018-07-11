@@ -4,7 +4,7 @@ import sys
 import six
 
 from .errors import ExpectedExprError, UnexpectedExprError, SemanticError
-from .position import Position
+from .position import Position, get_line_at_position
 
 class Eof: pass
 eof = Eof()
@@ -13,9 +13,8 @@ class _ParseBacktrackError(BaseException):
     pass
 
 class _PegState:
-    def __init__(self, idx, pos):
-        self.idx = idx
-        self.pos = pos
+    def __init__(self, position):
+        self.position = position
         self.vars = {}
         self.committed = False
         self.error = None
@@ -33,9 +32,8 @@ class Node:
         self.end_pos = end_pos
 
 class Parser:
-    def __init__(self, text, initial_position=Position()):
+    def __init__(self, text):
         self._text = text
-        self._initial_position = initial_position
 
     def __call__(self, r, *args, **kw):
         return self._parse(lambda p: p(r, *args, **kw))
@@ -44,7 +42,7 @@ class Parser:
         return self._parse(lambda p: p.consume(r, *args, **kw))
 
     def _parse(self, fn):
-        p = ParsingState(self._text, self._initial_position)
+        p = ParsingState(self._text)
         try:
             return fn(p)
         except _ParseBacktrackError:
@@ -52,25 +50,24 @@ class Parser:
             raise p._states[0].error
 
 class CallstackEntry:
-    def __init__(self, idx, position, fn, args, kw):
-        self.idx = idx
+    def __init__(self, position, fn, args, kw):
         self.position = position
         self.fn = fn
         self.args = args
         self.kw = kw
 
 class ParsingState(object):
-    def __init__(self, s, position):
+    def __init__(self, s):
         self._s = s
-        self._states = [_PegState(0, position)]
+        self._states = [_PegState(Position())]
         self._re_cache = {}
         self._callstack = []
 
     def __call__(self, r, *args, **kw):
         st = self._states[-1]
         if r is eof:
-            if st.idx != len(self._s):
-                self._raise(ExpectedExprError(self._s, st.pos, tuple(self._callstack), eof))
+            if st.position.offset != len(self._s):
+                self._raise(ExpectedExprError(self._s, st.position, tuple(self._callstack), eof))
             return ''
         elif isinstance(r, six.string_types):
             flags = args[0] if args else 0
@@ -78,17 +75,16 @@ class ParsingState(object):
             if not compiled:
                 compiled = re.compile(r, flags)
                 self._re_cache[r, flags] = compiled
-            m = compiled.match(self._s[st.idx:])
+            m = compiled.match(self._s[st.position.offset:])
             if not m:
-                self._raise(ExpectedExprError(self._s, st.pos, tuple(self._callstack), r))
+                self._raise(ExpectedExprError(self._s, st.position, tuple(self._callstack), r))
 
             ms = m.group(0)
-            st.idx += len(ms)
-            st.pos = st.pos.advanced_by(ms)
+            st.position = st.position.advanced_by(ms)
             return ms
         else:
             kw.pop('err', None)
-            self._callstack.append(CallstackEntry(st.idx, st.pos, r, args, kw))
+            self._callstack.append(CallstackEntry(st.position, r, args, kw))
             try:
                 return r(self, *args, **kw)
             finally:
@@ -101,15 +97,11 @@ class ParsingState(object):
         return Node(value, start_pos, end_pos)
 
     def position(self):
-        return self._states[-1].pos
+        return self._states[-1].position
 
     def __repr__(self):
-        ctx_fn = getattr(self._states[-1].pos, 'text_context', None)
-        if ctx_fn is None:
-            return super(ParsingState, self).__repr__()
-
-        ctx, ctx_idx = ctx_fn(self._s)
-        return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(ctx[:ctx_idx], ctx[ctx_idx:]))
+        line, line_offs = get_line_at_position(self._s, self._states[-1].position)
+        return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
 
     @staticmethod
     def eof(p):
@@ -117,12 +109,12 @@ class ParsingState(object):
 
     def error(self, *args, **kw):
         st = self._states[-1]
-        exc = SemanticError(self._s, st.pos, tuple(self._callstack), args, kw)
+        exc = SemanticError(self._s, st.position, tuple(self._callstack), args, kw)
         self._raise(exc)
 
     def _raise(self, exc):
         st = self._states[-1]
-        st.update_error(exc, st.idx)
+        st.update_error(exc, st.position.offset)
         raise _ParseBacktrackError()
 
     def get(self, key, default=None):
@@ -149,7 +141,7 @@ class ParsingState(object):
 
     def __enter__(self):
         self._states[-1].committed = False
-        self._states.append(_PegState(self._states[-1].idx, self._states[-1].pos))
+        self._states.append(_PegState(self._states[-1].position))
 
     def __exit__(self, type, value, traceback):
         if type is None:
@@ -179,7 +171,7 @@ class ParsingState(object):
         cur.error = None
         cur.error_idx = None
 
-        prev.pos = cur.pos
+        prev.position = cur.position
         prev.committed = True
 
     def __nonzero__(self):
