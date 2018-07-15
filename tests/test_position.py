@@ -1,4 +1,5 @@
 from speg.position import Position, get_line_at_position
+import pytest
 
 def test_initial():
     p = Position()
@@ -122,3 +123,28 @@ def test_context_postnlx():
     assert get_line_at_position('line1\nline2\n', p) == ('line2', 1)
     assert get_line_at_position('line1\nline2\nline3', p) == ('line2', 1)
     assert get_line_at_position('line1\nline2\nline3\n', p) == ('line2', 1)
+
+def test_eq():
+    p = Position(42)
+    assert p == p
+    assert p == Position(42)
+    assert p != 42
+
+    assert p != Position()
+    assert p != Position(41)
+    assert p != Position(43)
+
+def test_comparison():
+    p = Position(42)
+    assert p <= p
+    assert p >= p
+    assert Position(41) < p < Position(43)
+
+    assert p.__lt__(43) is NotImplemented
+
+def test_repr():
+    p = Position(42)
+    assert repr(p) == 'Position(42, 1, 1)'
+
+def test_hash():
+    assert hash(Position(1)) == hash(Position(1))

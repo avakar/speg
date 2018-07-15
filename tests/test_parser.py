@@ -1,5 +1,4 @@
-from speg import Parser, peg, parse, ParseError, eof
-import speg
+from speg import Parser, peg, parse, ParseError, eof, hidden
 import pytest
 
 def test_simple():
@@ -169,5 +168,77 @@ def test_repr():
 
     parse('test', root)
 
-def test_multiline_repr():
-    pass
+def test_error_str():
+    try:
+        parse('test', 'xx')
+        assert False
+    except ParseError as e:
+        assert str(e).startswith('at')
+
+def test_multiple_exp_fails():
+    def operator(p):
+        return p(r'[+\-]')
+
+    def atom_expr(p):
+        with p:
+            p(r'\(')
+            p(bin_expr)
+            return p(r'\)')
+        p(r'[0-9]+')
+
+    def bin_expr(p):
+        p(atom_expr)
+        with p:
+            p(operator)
+            p(bin_expr)
+
+    def root(p):
+        p(bin_expr)
+        p(eof)
+
+    try:
+        parse('1(', root)
+        assert False
+    except ParseError as e:
+        assert e.message == 'expected one of <operator>, eof'
+
+def test_hidden_rule():
+    def x(p):
+        p('x')
+
+    def root(p):
+        p(x)
+        p(eof)
+
+    try:
+        parse('y', root)
+    except ParseError as e:
+        assert e.message == 'expected <root>'
+
+    root = hidden(root)
+
+    try:
+        parse('y', root)
+    except ParseError as e:
+        assert e.message == 'expected <x>'
+
+def test_opt():
+    def ws(p):
+        p(r' +')
+
+    def x(p):
+        p(r'x')
+
+    @hidden
+    def root(p):
+        p.opt(ws)
+        p(x)
+
+    parse('  x', root)
+    parse('x', root)
+
+    try:
+        parse('y', root)
+        assert False
+    except ParseError as e:
+        assert e.message == 'expected one of <ws>, <x>'

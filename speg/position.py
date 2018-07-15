@@ -1,7 +1,7 @@
 from functools import total_ordering
 
 @total_ordering
-class Position:
+class Position(object):
     def __init__(self, offset=0, line=1, col=1):
         self.offset = offset
         self.line = line
@@ -24,6 +24,9 @@ class Position:
             return NotImplemented
         return self.offset == other.offset
 
+    def __ne__(self, other):
+        return not self == other
+
     def __hash__(self):
         return hash(self.offset)
 
@@ -33,7 +36,7 @@ class Position:
         return self.offset < other.offset
 
     def __repr__(self):
-        return '{}({!r}, {!r}, {!r})'.format(Position.__qualname__,
+        return '{}({!r}, {!r}, {!r})'.format(Position.__name__,
             self.offset, self.line, self.col)
 
 def get_line_at_position(text, pos):

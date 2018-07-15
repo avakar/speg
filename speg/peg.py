@@ -48,9 +48,6 @@ class CallstackEntry:
         self.args = args
         self.kw = kw
 
-    def name(self):
-        return self.fn.__name__
-
 class ParsingState(object):
     def __init__(self, s):
         self._s = s

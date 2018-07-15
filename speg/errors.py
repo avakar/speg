@@ -59,7 +59,8 @@ def raise_parsing_error(failures):
         if exps:
             exp_syms = set()
             for f in exps:
-                r = _first(se.fn for se in f.callstack if se.position == max_pos)
+                r = _first(se.fn for se in f.callstack
+                    if se.position == max_pos and not getattr(se.fn, '_speg_hidden', False))
                 if r is None:
                     r = f.expr
                 exp_syms.add(rule_to_str(r))
