@@ -1,3 +1,6 @@
+from functools import total_ordering
+
+@total_ordering
 class Position:
     def __init__(self, offset=0, line=1, col=1):
         self.offset = offset
@@ -15,6 +18,23 @@ class Position:
             line = self.line + text[:nl_pos].count('\n') + 1
             col = text_len - nl_pos
         return Position(offset, line, col)
+
+    def __eq__(self, other):
+        if not isinstance(other, Position):
+            return NotImplemented
+        return self.offset == other.offset
+
+    def __hash__(self):
+        return hash(self.offset)
+
+    def __lt__(self, other):
+        if not isinstance(other, Position):
+            return NotImplemented
+        return self.offset < other.offset
+
+    def __repr__(self):
+        return '{}({!r}, {!r}, {!r})'.format(Position.__qualname__,
+            self.offset, self.line, self.col)
 
 def get_line_at_position(text, pos):
     suffix = text[pos.offset - pos.col + 1:]

@@ -3,11 +3,9 @@ import sys
 
 import six
 
-from .errors import ExpectedExprError, UnexpectedExprError, SemanticError
+from .errors import ExpectedExpr, UnexpectedExpr, SemanticFailure, raise_parsing_error
 from .position import Position, get_line_at_position
-
-class Eof: pass
-eof = Eof()
+from .rules import eof
 
 class _ParseBacktrackError(BaseException):
     pass
@@ -17,13 +15,7 @@ class _PegState:
         self.position = position
         self.vars = {}
         self.committed = False
-        self.error = None
-        self.error_idx = None
-
-    def update_error(self, exc, idx):
-        if self.error is None or self.error_idx < idx:
-            self.error = exc
-            self.error_idx = idx
+        self.failures = set()
 
 class Node:
     def __init__(self, value, start_pos, end_pos):
@@ -47,7 +39,7 @@ class Parser:
             return fn(p)
         except _ParseBacktrackError:
             assert len(p._states) == 1
-            raise p._states[0].error
+            raise_parsing_error(p._states[0].failures)
 
 class CallstackEntry:
     def __init__(self, position, fn, args, kw):
@@ -55,6 +47,9 @@ class CallstackEntry:
         self.fn = fn
         self.args = args
         self.kw = kw
+
+    def name(self):
+        return self.fn.__name__
 
 class ParsingState(object):
     def __init__(self, s):
@@ -67,7 +62,7 @@ class ParsingState(object):
         st = self._states[-1]
         if r is eof:
             if st.position.offset != len(self._s):
-                self._raise(ExpectedExprError(self._s, st.position, tuple(self._callstack), eof))
+                self._raise(ExpectedExpr(self._s, st.position, tuple(self._callstack), eof))
             return ''
         elif isinstance(r, six.string_types):
             flags = args[0] if args else 0
@@ -77,7 +72,7 @@ class ParsingState(object):
                 self._re_cache[r, flags] = compiled
             m = compiled.match(self._s[st.position.offset:])
             if not m:
-                self._raise(ExpectedExprError(self._s, st.position, tuple(self._callstack), r))
+                self._raise(ExpectedExpr(self._s, st.position, tuple(self._callstack), r))
 
             ms = m.group(0)
             st.position = st.position.advanced_by(ms)
@@ -108,13 +103,15 @@ class ParsingState(object):
         return p(eof)
 
     def error(self, *args, **kw):
+        if not args:
+            args = ['semantic error']
         st = self._states[-1]
-        exc = SemanticError(self._s, st.position, tuple(self._callstack), args, kw)
+        exc = SemanticFailure(self._s, st.position, tuple(self._callstack), args, kw)
         self._raise(exc)
 
-    def _raise(self, exc):
+    def _raise(self, failure):
         st = self._states[-1]
-        st.update_error(exc, st.position.offset)
+        st.failures.add(failure)
         raise _ParseBacktrackError()
 
     def get(self, key, default=None):
@@ -137,7 +134,7 @@ class ParsingState(object):
         with self:
             n = self.consume(r)
         if self:
-            self._raise(UnexpectedExprError(self._s, n.start_pos, n.end_pos, tuple(self._callstack), r))
+            self._raise(UnexpectedExpr(self._s, n.start_pos, n.end_pos, tuple(self._callstack), r))
 
     def __enter__(self):
         self._states[-1].committed = False
@@ -149,8 +146,7 @@ class ParsingState(object):
         else:
             cur = self._states[-1]
             prev = self._states[-2]
-            if cur.error:
-                prev.update_error(cur.error, cur.error_idx)
+            prev.failures.update(cur.failures)
 
         self._states.pop()
         return type is _ParseBacktrackError
@@ -168,8 +164,7 @@ class ParsingState(object):
             else:
                 prev.vars[key] = val, True
 
-        cur.error = None
-        cur.error_idx = None
+        cur.failures.clear()
 
         prev.position = cur.position
         prev.committed = True

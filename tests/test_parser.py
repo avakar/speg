@@ -1,4 +1,4 @@
-from speg import Parser, peg, parse, ParseError, ExpectedExprError, UnexpectedExprError, SemanticError
+from speg import Parser, peg, parse, ParseError, eof
 import speg
 import pytest
 
@@ -80,12 +80,13 @@ def test_eof():
 def test_failed_eof():
     def root(p):
         p('x')
-        p(p.eof)
+        p(eof)
     try:
         peg("xx", root)
-    except ExpectedExprError as e:
-        assert e.position.offset == 1
-        assert e.expr == speg.eof
+    except ParseError as e:
+        assert e.message == 'expected eof'
+        assert e.start_pos.offset == 1
+        assert e.end_pos.offset == 1
 
 def test_parser():
     p = Parser("text")
@@ -102,15 +103,16 @@ def test_error():
     try:
         parse("test", root)
         assert False
-    except ExpectedExprError as e:
-        assert e.position.offset == 2
+    except ParseError as e:
+        assert e.start_pos.offset == 2
+        assert e.end_pos.offset == 2
 
 def test_sema_error():
     def root(p):
         p('te')
         p.error()
 
-    with pytest.raises(SemanticError):
+    with pytest.raises(ParseError):
         parse("test", root)
 
 def test_not():
@@ -128,10 +130,10 @@ def test_not():
     try:
         parse('123a', num)
         assert False
-    except UnexpectedExprError as e:
+    except ParseError as e:
+        assert e.message == 'unexpected <ident>'
         assert e.start_pos.offset == 3
         assert e.end_pos.offset == 4
-        assert e.rule == ident
 
 def test_error_priority():
     def root(p):
@@ -150,14 +152,14 @@ def test_error_priority():
     try:
         parse("t", root)
         assert False
-    except ExpectedExprError as e:
-        assert e.position.offset == 0
+    except ParseError as e:
+        assert e.start_pos.offset == 0
 
     try:
         parse("1", root)
         assert False
-    except ExpectedExprError as e:
-        assert e.position.offset == 1
+    except ParseError as e:
+        assert e.start_pos.offset == 1
 
 def test_repr():
     def root(p):

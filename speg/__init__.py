@@ -1,5 +1,6 @@
-from .peg import Parser, eof
-from .errors import ParseError, ExpectedExprError, UnexpectedExprError, SemanticError
+from .errors import ParseError, ExpectedExpr, UnexpectedExpr, SemanticFailure
+from .peg import Parser
+from .rules import eof
 
 def peg(text, root_rule):
     p = Parser(text)
