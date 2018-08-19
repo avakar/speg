@@ -8,4 +8,7 @@ def rule_to_str(rule):
         return 'eof'
     if isinstance(rule, string_types):
         return repr(rule)
-    return '<{}>'.format(rule.__name__)
+    fn_name = rule.__name__
+    if fn_name.startswith('_'):
+        fn_name = fn_name[1:]
+    return '<{}>'.format(fn_name.replace('_', ' '))
