@@ -1,31 +1,29 @@
 from .rules import rule_to_str
 
 class ExpectedExpr:
-    def __init__(self, text, position, callstack, expr):
-        self.text = text
+    def __init__(self, position, callstack, expr):
         self.position = position
         self.callstack = callstack
         self.expr = expr
 
 class UnexpectedExpr:
-    def __init__(self, text, position, end_pos, callstack, rule):
-        self.text = text
+    def __init__(self, position, end_pos, callstack, rule):
         self.position = position
         self.end_pos = end_pos
         self.callstack = callstack
         self.rule = rule
 
 class SemanticFailure:
-    def __init__(self, text, position, callstack, args, kw):
-        self.text = text
+    def __init__(self, position, callstack, args, kw):
         self.position = position
         self.callstack = callstack
         self.args = args
         self.kw = kw
 
 class ParseError(RuntimeError):
-    def __init__(self, message, start_pos, end_pos, failures):
+    def __init__(self, message, text, start_pos, end_pos, failures):
         self.message = message
+        self.text = text
         self.start_pos = start_pos
         self.end_pos = end_pos
         self.failures = failures
@@ -37,7 +35,7 @@ class ParseError(RuntimeError):
 def _first(iterable):
     return next(iterable, None)
 
-def raise_parsing_error(failures):
+def raise_parsing_error(text, failures):
     max_pos = max(f.position for f in failures)
     end_pos = max_pos
     msg = []
@@ -71,4 +69,4 @@ def raise_parsing_error(failures):
             else:
                 msg.append('expected one of {}'.format(', '.join(exp_strs)))
 
-    raise ParseError('; '.join(msg), max_pos, end_pos, failures)
+    raise ParseError('; '.join(msg), text, max_pos, end_pos, failures)

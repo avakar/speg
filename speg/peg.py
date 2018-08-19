@@ -39,7 +39,7 @@ class Parser:
             return fn(p)
         except _ParseBacktrackError:
             assert len(p._states) == 1
-            raise_parsing_error(p._states[0].failures)
+            raise_parsing_error(self._text, p._states[0].failures)
 
 class CallstackEntry:
     def __init__(self, position, fn, args, kw):
@@ -47,6 +47,9 @@ class CallstackEntry:
         self.fn = fn
         self.args = args
         self.kw = kw
+
+    def __repr__(self):
+        return '{} at {}:{}'.format(self.fn.__name__, self.position.line, self.position.col)
 
 class ParsingState(object):
     def __init__(self, s):
@@ -59,7 +62,7 @@ class ParsingState(object):
         st = self._states[-1]
         if r is eof:
             if st.position.offset != len(self._s):
-                self._raise(ExpectedExpr(self._s, st.position, tuple(self._callstack), eof))
+                self._raise(ExpectedExpr(st.position, tuple(self._callstack), eof))
             return ''
         elif isinstance(r, six.string_types):
             flags = args[0] if args else 0
@@ -69,7 +72,7 @@ class ParsingState(object):
                 self._re_cache[r, flags] = compiled
             m = compiled.match(self._s[st.position.offset:])
             if not m:
-                self._raise(ExpectedExpr(self._s, st.position, tuple(self._callstack), r))
+                self._raise(ExpectedExpr(st.position, tuple(self._callstack), r))
 
             ms = m.group(0)
             st.position = st.position.advanced_by(ms)
@@ -103,7 +106,7 @@ class ParsingState(object):
         if not args:
             args = ['semantic error']
         st = self._states[-1]
-        exc = SemanticFailure(self._s, st.position, tuple(self._callstack), args, kw)
+        exc = SemanticFailure(st.position, tuple(self._callstack), args, kw)
         self._raise(exc)
 
     def _raise(self, failure):
@@ -131,7 +134,7 @@ class ParsingState(object):
         with self:
             n = self.consume(r)
         if self:
-            self._raise(UnexpectedExpr(self._s, n.start_pos, n.end_pos, tuple(self._callstack), r))
+            self._raise(UnexpectedExpr(n.start_pos, n.end_pos, tuple(self._callstack), r))
 
     def __enter__(self):
         self._states[-1].committed = False
