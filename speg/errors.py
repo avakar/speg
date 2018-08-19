@@ -1,24 +1,21 @@
 from .rules import rule_to_str
 
 class ExpectedExpr:
-    def __init__(self, position, callstack, expr):
-        self.position = position
-        self.callstack = callstack
+    def __init__(self, expr, callstack):
         self.expr = expr
+        self.callstack = callstack
 
 class UnexpectedExpr:
-    def __init__(self, position, end_pos, callstack, rule):
-        self.position = position
+    def __init__(self, end_pos, rule, callstack):
         self.end_pos = end_pos
-        self.callstack = callstack
         self.rule = rule
+        self.callstack = callstack
 
 class SemanticFailure:
-    def __init__(self, position, callstack, args, kw):
-        self.position = position
-        self.callstack = callstack
+    def __init__(self, args, kw, callstack):
         self.args = args
         self.kw = kw
+        self.callstack = callstack
 
 class ParseError(RuntimeError):
     def __init__(self, message, text, start_pos, end_pos, failures):
@@ -35,30 +32,27 @@ class ParseError(RuntimeError):
 def _first(iterable):
     return next(iterable, None)
 
-def raise_parsing_error(text, failures):
-    max_pos = max(f.position for f in failures)
-    end_pos = max_pos
+def raise_parsing_error(text, position, failures):
+    end_pos = position
     msg = []
 
-    max_fails = [f for f in failures if f.position == max_pos]
-
-    sema = _first(f for f in max_fails if isinstance(f, SemanticFailure))
+    sema = _first(f for f in failures if isinstance(f, SemanticFailure))
     if sema is not None:
         msg.append(sema.args[0])
     else:
-        unexps = [f for f in max_fails if isinstance(f, UnexpectedExpr)]
+        unexps = [f for f in failures if isinstance(f, UnexpectedExpr)]
         if unexps:
             unexp = min(unexps,
-                key=lambda f: f.end_pos.offset - f.position.offset)
+                key=lambda f: f.end_pos.offset - position.offset)
             end_pos = unexp.end_pos
             msg.append('unexpected {}'.format(rule_to_str(unexp.rule)))
 
-        exps = [f for f in max_fails if isinstance(f, ExpectedExpr)]
+        exps = [f for f in failures if isinstance(f, ExpectedExpr)]
         if exps:
             exp_syms = set()
             for f in exps:
                 r = _first(se.fn for se in f.callstack
-                    if se.position == max_pos and not getattr(se.fn, '_speg_hidden', False))
+                    if se.position == position and not getattr(se.fn, '_speg_hidden', False))
                 if r is None:
                     r = f.expr
                 exp_syms.add(rule_to_str(r))
@@ -69,4 +63,4 @@ def raise_parsing_error(text, failures):
             else:
                 msg.append('expected one of {}'.format(', '.join(exp_strs)))
 
-    raise ParseError('; '.join(msg), text, max_pos, end_pos, failures)
+    raise ParseError('; '.join(msg), text, position, end_pos, failures)
