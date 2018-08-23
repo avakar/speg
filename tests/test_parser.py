@@ -1,138 +1,132 @@
-from speg import Parser, peg, parse, ParseError, eof, hidden
+from speg import parse, parser, ParseError, hidden
 import pytest
 
 def test_simple():
-    assert peg("", "") == ""
+    with parser('') as p:
+        p.eat('')
 
-    assert peg("test", "") == ""
-    assert peg("test", "t") == "t"
-    assert peg("test", "te") == "te"
+    with parser('test') as p:
+        p.eat('')
+
+    with parser('test') as p:
+        p.eat('t')
+
+    with parser('test') as p:
+        p.eat('te')
 
 def test_position():
-    def root(p):
-        pp = p.position()
-        assert pp.offset == 0
+    with parser("line1\nline2\n") as p:
+        pp = p.location
+        assert pp.index == 0
         assert pp.line == 1
         assert pp.col == 1
 
-        p("li")
-        pp = p.position()
-        assert pp.offset == 2
+        p.eat("li")
+        pp = p.location
+        assert pp.index == 2
         assert pp.line == 1
         assert pp.col == 3
 
-        p('ne1\nl')
-        pp = p.position()
-        assert pp.offset == 7
+        p.eat('ne1\nl')
+        pp = p.location
+        assert pp.index == 7
         assert pp.line == 2
         assert pp.col == 2
 
-    peg("line1\nline2\n", root)
-
-def test_literal_consume():
-    def root(p):
-        n = p.consume("")
-        assert n.value == ""
-        assert n.start_pos.offset == 0
-        assert n.end_pos.offset == 0
-
-        n = p.consume("te")
-        assert n.value == "te"
-        assert n.start_pos.offset == 0
-        assert n.end_pos.offset == 2
-
-    peg("test", root)
-
-def test_rule_consume():
+def test_rule():
     def rule(p):
-        return p(r'..'), p(r'..')
+        return p.re(r'..'), p.re(r'..')
 
-    def root(p):
-        n = p.consume(rule)
-        assert n.value == ('te', 'st')
-        assert n.end_pos.offset == 4
+    with parser('test') as p:
+        n = p(rule)
+        assert n == ('te', 'st')
 
-    peg("test", root)
-
-def test_consume_re():
-    def root(p):
-        n = p.consume(r'[123]*')
-        assert n.value == '31'
-        assert n.end_pos.offset == 2
-
-    peg("3141569", root)
+def test_re():
+    with parser("3141569") as p:
+        n = p.re(r'[123]*')
+        assert n == '31'
+        assert p.index == 2
 
 def test_simple_fail():
     with pytest.raises(ParseError):
-        peg("", "t")
+        with parser('') as p:
+            p.eat('t')
 
 def test_simple_rule():
     def root(p):
-        return 2 * p("t")
-    assert peg("test", root) == "tt"
+        return 2 * p.re('.')
+    with parser("test") as p:
+        assert p(root) == 'tt'
 
 def test_eof():
-    def root(p):
-        p(p.eof)
-    assert peg("", root) is None
+    with parser('') as p:
+        p.check_eof()
 
 def test_failed_eof():
-    def root(p):
-        p('x')
-        p(eof)
     try:
-        peg("xx", root)
+        with parser("xx") as p:
+            p.check_eof()
+            assert False
     except ParseError as e:
         assert e.message == 'expected eof'
-        assert e.start_pos.offset == 1
-        assert e.end_pos.offset == 1
+        assert e.start_pos.index == 0
+        assert e.end_pos.index == 0
+
+    try:
+        with parser("xx") as p:
+            p.eat('x')
+            p.check_eof()
+            assert False
+    except ParseError as e:
+        assert e.message == 'expected eof'
+        assert e.start_pos.index == 1
+        assert e.end_pos.index == 1
 
 def test_parser():
-    p = Parser("text")
-
-    assert p("") == ""
-    assert p("te") == "te"
-    assert p(r'...') == "tex"
+    with parser("text") as p:
+        assert p.eat("") == ""
+        assert p.eat("te") == "te"
+        assert p.re(r'..') == "xt"
 
 def test_error():
     def root(p):
-        p('te')
-        p('xx')
+        p.eat('te')
+        p.eat('xx')
 
     try:
         parse("test", root)
         assert False
     except ParseError as e:
-        assert e.start_pos.offset == 2
-        assert e.end_pos.offset == 2
+        assert e.start_pos.index == 2
+        assert e.end_pos.index == 2
 
 def test_sema_error():
     def root(p):
-        p('te')
-        p.error()
+        p.eat('te')
+        p.fail()
 
     with pytest.raises(ParseError):
         parse("test", root)
 
 def test_not():
     def ident(p):
-        p.not_('[0-9]')
-        return p('[_a-zA-Z0-9]+')
+        p.not_.re('[0-9]')
+        return p.re('[_a-zA-Z0-9]+')
 
     def num(p):
-        r = p(r'[0-9]+')
+        r = p.re(r'[0-9]+')
         p.not_(ident)
         return int(r, 10)
 
-    assert parse('123', num).value == 123
+    assert parse('123', num) == 123
 
     try:
         parse('123a', num)
         assert False
     except ParseError as e:
         assert e.message == 'unexpected <ident>'
-        assert e.start_pos.offset == 3
-        assert e.end_pos.offset == 4
+        assert e.start_pos.index == 3
+        assert e.end_pos.index == 4
 
 def test_error_priority():
     def root(p):
@@ -141,93 +135,113 @@ def test_error_priority():
         return p(undef)
 
     def num(p):
-        r = p(r'[0-9]+')
-        p('s')
+        r = p.re(r'[0-9]+')
+        p.eat('s')
         return int(r, 10)
 
     def undef(p):
-        p('x')
+        p.eat('x')
 
     try:
         parse("t", root)
         assert False
     except ParseError as e:
-        assert e.start_pos.offset == 0
+        assert e.start_pos.index == 0
 
     try:
         parse("1", root)
         assert False
     except ParseError as e:
-        assert e.start_pos.offset == 1
+        assert e.start_pos.index == 1
 
 def test_repr():
-    def root(p):
+    with parser('test') as p:
         assert repr(p) == "<speg.ParsingState at '*test'>"
-        p('te')
+        p.eat('te')
         assert repr(p) == "<speg.ParsingState at 'te*st'>"
-
-    parse('test', root)
-
-def test_error_str():
-    try:
-        parse('test', 'xx')
-        assert False
-    except ParseError as e:
-        assert str(e).startswith('at')
 
 def test_multiple_exp_fails():
     def operator(p):
-        return p(r'[+\-]')
+        return p.re(r'[+\-]')
 
     def atom_expr(p):
         with p:
-            p(r'\(')
-            p(bin_expr)
-            return p(r'\)')
-        p(r'[0-9]+')
+            p.eat('(')
+            r = p(bin_expr)
+            p.eat(')')
+            return r
+
+        return int(p.re(r'[0-9]+'), 10)
 
     def bin_expr(p):
-        p(atom_expr)
-        with p:
-            p(operator)
-            p(bin_expr)
+        r = p(atom_expr)
+
+        while p:
+            with p:
+                op = p(operator)
+                rhs = p(atom_expr)
+
+                if op == '+':
+                    r += rhs
+                elif op == '-':
+                    r -= rhs
+
+        return r
 
     def root(p):
-        p(bin_expr)
-        p(eof)
+        r = p(bin_expr)
+        p.check_eof()
+        return r
+
+    assert parse('1', root) == 1
+    assert parse('1+1', root) == 2
+    assert parse('1+(2+3)', root) == 6
+    assert parse('1+(2-3)', root) == 0
+    assert parse('1-(2+3)', root) == -4
+    assert parse('1-2+3', root) == 2
 
     try:
-        parse('1(', root)
+        with parser('1+') as p:
+            p(root)
         assert False
     except ParseError as e:
-        assert e.message == 'expected one of <operator>, eof'
+        assert str(e) == 'at 1:3: expected <atom expr>'
 
 def test_hidden_rule():
     def x(p):
-        p('x')
+        p.eat('x')
 
+    @hidden
     def root(p):
         p(x)
-        p(eof)
+        p.check_eof()
 
     try:
         parse('y', root)
     except ParseError as e:
-        assert e.message == 'expected <root>'
+        assert str(e) == 'at 1:1: expected <x>'
 
-    root = hidden(root)
+def test_named_rule():
+    def x(p):
+        """whizzing frobulator"""
+        p.eat('x')
+
+    @hidden
+    def root(p):
+        p(x)
+        p.check_eof()
 
     try:
         parse('y', root)
     except ParseError as e:
-        assert e.message == 'expected <x>'
+        assert str(e) == 'at 1:1: expected whizzing frobulator'
 
 def test_opt():
     def ws(p):
-        p(r' +')
+        p.re(r' +')
 
     def x(p):
-        p(r'x')
+        p.eat('x')
 
     @hidden
     def root(p):
@@ -241,4 +255,4 @@ def test_opt():
         parse('y', root)
         assert False
     except ParseError as e:
-        assert e.message == 'expected one of <ws>, <x>'
+        assert e.message == 'expected <x>'

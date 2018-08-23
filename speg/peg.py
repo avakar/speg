@@ -1,195 +1,243 @@
+from contextlib import contextmanager
 import re
 import sys
 
 import six
 
-from .errors import ExpectedExpr, UnexpectedExpr, SemanticFailure, raise_parsing_error
-from .position import Position, get_line_at_position
-from .rules import eof
+from .errors import FailHandler
+from .position import Location, get_line_at_position
 
 class _ParseBacktrackError(BaseException):
     pass
 
-class _PegState:
-    def __init__(self, position):
-        self.position = position
-        self.vars = {}
-        self.committed = False
-        self.failure_pos = None
-        self.failures = None
+@contextmanager
+def parser(text):
+    fail_handler = FailHandler(Location()) # XXX location to parsingstate too
+    p = ParsingState(text, fail_handler)
+    try:
+        yield p
+    except _ParseBacktrackError:
+        raise fail_handler.parse_error(text)
 
-class Node:
-    def __init__(self, value, start_pos, end_pos):
-        self.value = value
-        self.start_pos = start_pos
-        self.end_pos = end_pos
+def parse(text, fn, *args, **kw):
+    with parser(text) as p:
+        return p(fn, *args, **kw)
 
-class Parser:
-    def __init__(self, text):
-        self._text = text
+class _State:
+    def __init__(self, location=Location()):
+        self.location = location
+        self.vars = None
+
+class _OptProxy:
+    def __init__(self, p):
+        self._p = p
+
+    def check_eof(self):
+        with self:
+            return self._p.check_eof()
+        return ''
+
+    def eat(self, s):
+        with self:
+            return self._p.eat(s)
+        return ''
+
+    def match(self, pattern):
+        with self:
+            return self._p.match(pattern)
+        return ''
+
+    def re(self, pattern, flags=0):
+        with self:
+            return self._p.re(pattern, flags)
+        return ''
 
     def __call__(self, r, *args, **kw):
-        return self._parse(lambda p: p(r, *args, **kw))
+        with self:
+            return self._p(r, *args, **kw)
+        return ''
 
-    def parse(self, r, *args, **kw):
-        return self._parse(lambda p: p.consume(r, *args, **kw))
+    def __enter__(self):
+        r = self._p.__enter__()
+        self._p._fail_handler.suppress_fails()
+        return r
 
-    def _parse(self, fn):
-        p = ParsingState(self._text)
-        try:
-            return fn(p)
-        except _ParseBacktrackError:
-            assert len(p._states) == 1
-            assert p._states[0].failure_pos is not None
-            raise_parsing_error(self._text, p._states[0].failure_pos, p._states[0].failures)
+    def __exit__(self, type, value, traceback):
+        return self._p.__exit__(type, value, traceback)
 
-class CallstackEntry:
-    def __init__(self, position, fn, args, kw):
-        self.position = position
-        self.fn = fn
-        self.args = args
-        self.kw = kw
+# class _NotProxy:
+#     def __init__(self, p):
+#         self._p = p
 
-    def __repr__(self):
-        return '{} at {}:{}'.format(self.fn.__name__, self.position.line, self.position.col)
+#     def check_eof(self):
+#         with self._p:
+#             self._p.check_eof()
+#         return ''
+
+#     def eat(self, s):
+#         with self:
+#             self._p.eat(s)
+#         return ''
+
+#     def match(self, pattern):
+#         with self:
+#             self._p.match(pattern)
+#         return ''
+
+#     def re(self, pattern, flags=0):
+#         with self:
+#             self._p.re(pattern, flags)
+#         return ''
+
+#     def __call__(self, r, *args, **kw):
+#         with self._p:
+#             return self._p(r, *args, **kw)
+#         return ''
 
 class ParsingState(object):
-    def __init__(self, s):
+    def __init__(self, s, fail_handler):
         self._s = s
-        self._states = [_PegState(Position())]
+        self._states = [_State()]
         self._re_cache = {}
-        self._callstack = []
+        self._fail_handler = fail_handler
 
-    def __call__(self, r, *args, **kw):
+        self._succeeded = True
+
+        self.opt = _OptProxy(self)
+        #self.not_ = _NotProxy(self)
+
+    @property
+    def index(self):
+        return self.location.index
+
+    @property
+    def location(self):
+        return self._states[-1].location
+
+    def check_eof(self):
         st = self._states[-1]
-        if r is eof:
-            if st.position.offset != len(self._s):
-                self._raise(ExpectedExpr, eof)
-            return ''
-        elif isinstance(r, six.string_types):
-            flags = args[0] if args else 0
-            compiled = self._re_cache.get((r, flags))
-            if not compiled:
-                compiled = re.compile(r, flags)
-                self._re_cache[r, flags] = compiled
-            m = compiled.match(self._s[st.position.offset:])
-            if not m:
-                self._raise(ExpectedExpr, r)
+        if st.location.index != len(self._s):
+            self._fail_handler.expected_eof(st.location)
+            raise _ParseBacktrackError()
+        return ''
 
-            ms = m.group(0)
-            st.position = st.position.advanced_by(ms)
-            return ms
-        else:
-            kw.pop('err', None)
-            self._callstack.append(CallstackEntry(st.position, r, args, kw))
-            try:
-                return r(self, *args, **kw)
-            finally:
-                self._callstack.pop()
-
-    def consume(self, r, *args, **kw):
-        start_pos = self.position()
-        value = self(r, *args, **kw)
-        end_pos = self.position()
-        return Node(value, start_pos, end_pos)
-
-    def position(self):
-        return self._states[-1].position
-
-    def __repr__(self):
-        line, line_offs = get_line_at_position(self._s, self._states[-1].position)
-        return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
-
-    @staticmethod
-    def eof(p):
-        return p(eof)
-
-    def error(self, *args, **kw):
-        if not args:
-            args = ['semantic error']
-        self._raise(SemanticFailure, args, kw)
-
-    def _raise(self, failure_type, *args):
+    def eat(self, s):
         st = self._states[-1]
-        if st.failure_pos is None or st.failure_pos <= st.position:
-            failure = failure_type(*args, callstack=tuple(self._callstack))
-            if st.failure_pos != st.position:
-                st.failure_pos = st.position
-                st.failures = set([failure])
-            else:
-                st.failures.add(failure)
+        idx = st.location.index
+        l = len(s)
+        if self._s[idx:idx+l] != s:
+            self._fail_handler.expected_string(st.location, s)
+            raise _ParseBacktrackError()
+        st.location = st.location.advanced_by(s)
+        return s
+
+    def match(self, pattern):
+        st = self._states[-1]
+        idx = st.location.index
+        m = pattern.match(self._s[idx:])
+        if not m:
+            self._fail_handler.expected_match(st.location, pattern)
+            raise _ParseBacktrackError()
+        s = m.group()
+        st.location = st.location.advanced_by(s)
+        return s
+
+    def re(self, pattern, flags=0):
+        k = pattern, flags
+        compiled = self._re_cache.get(k)
+        if compiled is None:
+            compiled = re.compile(pattern, flags)
+            self._re_cache[k] = compiled
+        return self.match(compiled)
+
+    def __call__(self, fn, *args, **kw):
+        self._fail_handler.push_symbol(self.location, fn, args, kw)
+        try:
+            self._succeeded = True
+            r = fn(self, *args, **kw)
+            self._succeeded = True
+            return r
+        finally:
+            self._fail_handler.pop_symbol()
+
+    def fail(self, *args, **kw):
+        self._fail_handler.explicit_fail(self.location, args, kw)
         raise _ParseBacktrackError()
 
     def get(self, key, default=None):
-        for state in self._states[::-1]:
-            if key in state.vars:
-                return state.vars[key][0]
-        return default
-
-    def set(self, key, value):
-        self._states[-1].vars[key] = value, False
-
-    def set_global(self, key, value):
-        self._states[-1].vars[key] = value, True
-
-    def opt(self, *args, **kw):
-        with self:
-            return self(*args, **kw)
-
-    def not_(self, r, *args, **kw):
-        self._states.append(_PegState(self._states[-1].position))
         try:
-            n = self.consume(r)
-        except _ParseBacktrackError:
-            consumed = False
-        else:
-            consumed = True
-        finally:
-            self._states.pop()
+            return self[key]
+        except KeyError:
+            return default
 
-        if consumed:
-            self._raise(UnexpectedExpr, n.end_pos, r)
+    def __getitem__(self, key):
+        for state in self._states[::-1]:
+            if state.vars is not None and key in state.vars:
+                return state.vars[key]
+        raise KeyError('{}'.format(key))
+
+    def __setitem__(self, key, value):
+        st = self._states[-1]
+        if st.vars is None:
+            st.vars = { key: value }
+        else:
+            st.vars[key] = value
+
+    def __repr__(self):
+        line, line_offs = get_line_at_position(self._s, self._states[-1].location)
+        return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
+
+    def not_(self, fn, *args, **kw):
+        st = self._states[-1]
+        self._states.append(_State(st.location))
+
+        self._fail_handler.push_state(st.location)
+        self._fail_handler.suppress_fails()
+
+        try:
+            self(fn, *args, **kw)
+        except _ParseBacktrackError:
+            self._succeeded = True
+            self._fail_handler.pop_state(True)
+            self._states.pop()
+            return ''
+
+
+        else:
+            self._fail_handler
+
+
+    # def not_(self, r, *args, **kw):
+    #     self._states.append(_State(self._states[-1].position))
+    #     try:
+    #         n = self.consume(r)
+    #     except _ParseBacktrackError:
+    #         consumed = False
+    #     else:
+    #         consumed = True
+    #     finally:
+    #         self._states.pop()
+
+    #     if consumed:
+    #         self._raise(UnexpectedExpr, n.end_pos, r)
 
     def __enter__(self):
-        self._states[-1].committed = False
-        self._states.append(_PegState(self._states[-1].position))
+        st = self._states[-1]
+        self._states.append(_State(st.location))
+
+        self._fail_handler.push_state(st.location)
 
     def __exit__(self, type, value, traceback):
-        if type is None:
-            self.commit()
-        else:
-            cur = self._states[-1]
-            prev = self._states[-2]
-            assert cur.failure_pos is not None
+        self._succeeded = type is None
+        self._fail_handler.pop_state(self._succeeded)
 
-            if prev.failure_pos is None or prev.failure_pos < cur.failure_pos:
-                prev.failure_pos = cur.failure_pos
-                prev.failures = cur.failures
-            elif prev.failure_pos == cur.failure_pos:
-                prev.failures.update(cur.failures)
+        if self._succeeded:
+            self._states[-2].location = self._states[-1].location
 
         self._states.pop()
         return type is _ParseBacktrackError
 
-    def commit(self):
-        cur = self._states[-1]
-        prev = self._states[-2]
-
-        for key in cur.vars:
-            val, g = cur.vars[key]
-            if not g:
-                continue
-            if key in prev.vars:
-                prev.vars[key] = val, prev.vars[key][1]
-            else:
-                prev.vars[key] = val, True
-
-        cur.failure_pos = None
-
-        prev.position = cur.position
-        prev.committed = True
-
     def __nonzero__(self):
-        return self._states[-1].committed
+        return self._succeeded
 
     __bool__ = __nonzero__

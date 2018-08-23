@@ -1,8 +1,5 @@
 from six import string_types
 
-class Eof: pass
-eof = Eof()
-
 def rule_to_str(rule):
     if rule is eof:
         return 'eof'

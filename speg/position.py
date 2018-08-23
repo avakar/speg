@@ -1,15 +1,15 @@
 from functools import total_ordering
 
 @total_ordering
-class Position(object):
-    def __init__(self, offset=0, line=1, col=1):
-        self.offset = offset
+class Location(object):
+    def __init__(self, index=0, line=1, col=1):
+        self.index = index
         self.line = line
         self.col = col
 
     def advanced_by(self, text):
         text_len = len(text)
-        offset = self.offset + text_len
+        index = self.index + text_len
         nl_pos = text.rfind('\n')
         if nl_pos < 0:
             line = self.line
@@ -17,30 +17,30 @@ class Position(object):
         else:
             line = self.line + text[:nl_pos].count('\n') + 1
             col = text_len - nl_pos
-        return Position(offset, line, col)
+        return Location(index, line, col)
 
     def __eq__(self, other):
-        if not isinstance(other, Position):
+        if not isinstance(other, Location):
             return NotImplemented
-        return self.offset == other.offset
+        return self.index == other.index
 
     def __ne__(self, other):
         return not self == other
 
     def __hash__(self):
-        return hash(self.offset)
+        return hash(self.index)
 
     def __lt__(self, other):
-        if not isinstance(other, Position):
+        if not isinstance(other, Location):
             return NotImplemented
-        return self.offset < other.offset
+        return self.index < other.index
 
     def __repr__(self):
-        return '{}({!r}, {!r}, {!r})'.format(Position.__name__,
-            self.offset, self.line, self.col)
+        return '{}({!r}, {!r}, {!r})'.format(Location.__name__,
+            self.index, self.line, self.col)
 
 def get_line_at_position(text, pos):
-    suffix = text[pos.offset - pos.col + 1:]
+    suffix = text[pos.index - pos.col + 1:]
     stop = suffix.find('\n')
     if stop == -1:
         return suffix, pos.col - 1
