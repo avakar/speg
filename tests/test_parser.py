@@ -259,3 +259,18 @@ def test_opt():
         assert False
     except ParseError as e:
         assert e.message == 'expected <x>'
+
+def test_opt_context():
+    with parser('xyz') as p:
+        assert p.index == 0
+        p.eat('x')
+        assert p.index == 1
+        with p.opt:
+            assert p.index == 1
+            p.eat('y')
+            assert p.index == 2
+            p.eat('a')
+        assert p
+        assert p.index == 1
+        p.eat('y')
+        assert p.index == 2

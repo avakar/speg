@@ -29,8 +29,13 @@ class _FailState:
         self.unexpected_end_loc = None
         self.sema = []
 
-    def update(self, state):
-        self.expected.update(
+    def update(self, o):
+        assert self.location == o.location
+        self.expected.update(o.expected)
+        self.sema.append(o.sema)
+        if o.unexpected is not None and (self.unexpected is None or self.unexpected_end_loc > o.unexpected_end_loc):
+            self.unexpected = o.unexpected
+            self.unexpected_end_loc = o.unexpected_end_loc
 
 def _get_fn_name(fn):
     n = getattr(fn, '__doc__', None)
@@ -93,9 +98,7 @@ class FailHandler:
 
             assert prev.location <= cur.location
             if prev.location == cur.location:
-                prev.expected.update(cur.expected)
-                prev.sema.extend(cur.sema)
-                prev.unexpected.update(cur.unexpected)
+                prev.update(cur)
             else:
                 self._state_stack[-2] = cur
 
@@ -105,18 +108,15 @@ class FailHandler:
         assert not self._suppress
         assert len(self._state_stack) == 1
         st = self._state_stack[0]
+        end_loc = st.location
 
         msg = []
         for sema in st.sema:
             msg.extend(str(x) for x in sema)
 
-        if st.unexpected:
-            msg.append('unexpected {}'.format(
-            unexp = min(unexps,
-                key=lambda f: f.end_pos.offset - position.offset)
-            end_pos = unexp.end_pos
-            msg.append('unexpected {}'.format(rule_to_str(unexp.rule)))
-
+        if st.unexpected is not None:
+            msg.append('unexpected {}'.format(st.unexpected))
+            end_loc = st.unexpected_end_loc
 
         if st.expected:
             if len(st.expected) == 1:
@@ -127,7 +127,7 @@ class FailHandler:
         if not msg:
             msg.append('failed')
 
-        return ParseError('; '.join(msg), text, st.location, st.location)
+        return ParseError('; '.join(msg), text, st.location, end_loc)
 
     def expected_eof(self, location):
         if self._update_location(location):
@@ -143,7 +143,10 @@ class FailHandler:
 
     def unexpected_symbol(self, start_loc, end_loc, fn):
         if self._update_location(start_loc):
-            self._state_stack[-1].unexpected.add(_get_fn_name(fn))
+            st = self._state_stack[-1]
+            if st.unexpected is None or st.unexpected_end_loc > end_loc:
+                st.unexpected = _get_fn_name(fn)
+                st.unexpected_end_loc = end_loc
 
     def explicit_fail(self, location, args, kw):
         if self._update_location(location):
@@ -160,43 +163,10 @@ class FailHandler:
         if st.location < location:
             st.location = location
             st.expected.clear()
-            st.sema.clear()
+            del st.sema[:]
         return True
 
     def _get_symbol(self, default):
         if not self._symbol or self._symbol.location != self._state_stack[-1].location:
             return default
         return _get_fn_name(self._symbol.fn)
-
-# def raise_parsing_error(text, position, failures):
-#     end_pos = position
-#     msg = []
-
-#     sema = _first(f for f in failures if isinstance(f, SemanticFailure))
-#     if sema is not None:
-#         msg.append(sema.args[0])
-#     else:
-#         unexps = [f for f in failures if isinstance(f, UnexpectedExpr)]
-#         if unexps:
-#             unexp = min(unexps,
-#                 key=lambda f: f.end_pos.offset - position.offset)
-#             end_pos = unexp.end_pos
-#             msg.append('unexpected {}'.format(rule_to_str(unexp.rule)))
-
-#         exps = [f for f in failures if isinstance(f, ExpectedExpr)]
-#         if exps:
-#             exp_syms = set()
-#             for f in exps:
-#                 r = _first(se.fn for se in f.callstack
-#                     if se.position == position and not getattr(se.fn, '_speg_hidden', False))
-#                 if r is None:
-#                     r = f.expr
-#                 exp_syms.add(rule_to_str(r))
-#             exp_strs = sorted(exp_syms)
-
-#             if len(exp_strs) == 1:
-#                 msg.append('expected {}'.format(exp_strs[0]))
-#             else:
-#                 msg.append('expected one of {}'.format(', '.join(exp_strs)))
-
-#     raise ParseError('; '.join(msg), text, position, end_pos, failures)

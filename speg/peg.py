@@ -58,14 +58,15 @@ class _OptProxy:
         return ''
 
     def __enter__(self):
-        r = self._p.__enter__()
         self._p._fail_handler.push_suppress()
+        r = self._p.__enter__()
         return r
 
     def __exit__(self, type, value, traceback):
+        r = self._p.__exit__(type, value, traceback)
         self._p._fail_handler.pop_suppress()
-        self._p.__exit__(None, None, None)
-        return type is _ParseBacktrackError
+        self._p.clear()
+        return r
 
 class ParsingState(object):
     def __init__(self, s, fail_handler):
@@ -164,7 +165,7 @@ class ParsingState(object):
         self._states.append(_State(start_loc))
         self._fail_handler.push_suppress()
         try:
-            n = self(r)
+            self(r)
         except _ParseBacktrackError:
             consumed = False
         else:
@@ -177,6 +178,7 @@ class ParsingState(object):
         if consumed:
             self._fail_handler.unexpected_symbol(start_loc, end_loc, r)
             raise _ParseBacktrackError
+        return ''
 
     def __enter__(self):
         st = self._states[-1]
@@ -192,6 +194,9 @@ class ParsingState(object):
 
         self._states.pop()
         return type is _ParseBacktrackError
+
+    def clear(self):
+        self._succeeded = True
 
     def __nonzero__(self):
         return self._succeeded
