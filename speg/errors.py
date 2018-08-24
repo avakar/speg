@@ -25,7 +25,25 @@ class _FailState:
     def __init__(self, location):
         self.location = location
         self.expected = set()
+        self.unexpected = None
+        self.unexpected_end_loc = None
         self.sema = []
+
+    def update(self, state):
+        self.expected.update(
+
+def _get_fn_name(fn):
+    n = getattr(fn, '__doc__', None)
+    if n is None:
+        n = fn.__name__
+        n = n.replace('_', ' ').strip()
+        return '<{}>'.format(n)
+
+    try:
+        n = n[:n.index('\n')]
+    except ValueError:
+        pass
+    return n.strip()
 
 class FailHandler:
     def __init__(self, initial_location):
@@ -35,6 +53,9 @@ class FailHandler:
         self._suppress = 0
 
     def push_symbol(self, location, fn, args, kw):
+        if self._suppress:
+            return
+
         if not getattr(fn, '_speg_hidden', False) and (self._symbol is None or self._symbol.location < location):
             self._symbol = _Symbol(self._symbol, self._symbol_height, location, fn, args, kw)
             self._symbol_height = 0
@@ -42,20 +63,29 @@ class FailHandler:
             self._symbol_height += 1
 
     def pop_symbol(self):
+        if self._suppress:
+            return
+
         if self._symbol_height:
             self._symbol_height -= 1
         else:
             self._symbol_height = self._symbol.parent_height
             self._symbol = self._symbol.parent
 
+    def push_suppress(self):
+        self._suppress += 1
+
+    def pop_suppress(self):
+        self._suppress -= 1
+
     def push_state(self, location):
         if self._suppress:
-            self._suppress += 1
+            return
         self._state_stack.append(_FailState(location))
 
     def pop_state(self, succeeded):
         if self._suppress:
-            self._suppress -= 1
+            return
 
         if not succeeded:
             cur = self._state_stack[-1]
@@ -65,22 +95,28 @@ class FailHandler:
             if prev.location == cur.location:
                 prev.expected.update(cur.expected)
                 prev.sema.extend(cur.sema)
+                prev.unexpected.update(cur.unexpected)
             else:
                 self._state_stack[-2] = cur
 
         self._state_stack.pop()
 
-    def suppress_fails(self):
-        if not self._suppress:
-            self._suppress = 1
-
     def parse_error(self, text):
+        assert not self._suppress
         assert len(self._state_stack) == 1
         st = self._state_stack[0]
 
         msg = []
         for sema in st.sema:
             msg.extend(str(x) for x in sema)
+
+        if st.unexpected:
+            msg.append('unexpected {}'.format(
+            unexp = min(unexps,
+                key=lambda f: f.end_pos.offset - position.offset)
+            end_pos = unexp.end_pos
+            msg.append('unexpected {}'.format(rule_to_str(unexp.rule)))
+
 
         if st.expected:
             if len(st.expected) == 1:
@@ -105,8 +141,12 @@ class FailHandler:
         if self._update_location(location):
             self._state_stack[-1].expected.add(self._get_symbol(repr(pattern)))
 
+    def unexpected_symbol(self, start_loc, end_loc, fn):
+        if self._update_location(start_loc):
+            self._state_stack[-1].unexpected.add(_get_fn_name(fn))
+
     def explicit_fail(self, location, args, kw):
-        if  self._update_location(location):
+        if self._update_location(location):
             self._state_stack[-1].sema.append(args)
 
     def _update_location(self, location):
@@ -126,17 +166,7 @@ class FailHandler:
     def _get_symbol(self, default):
         if not self._symbol or self._symbol.location != self._state_stack[-1].location:
             return default
-        n = getattr(self._symbol.fn, '__doc__', None)
-        if n is None:
-            n = self._symbol.fn.__name__
-            n = n.replace('_', ' ').strip()
-            return '<{}>'.format(n)
-
-        try:
-            n = n[:n.index('\n')]
-        except ValueError:
-            pass
-        return n.strip()
+        return _get_fn_name(self._symbol.fn)
 
 # def raise_parsing_error(text, position, failures):
 #     end_pos = position

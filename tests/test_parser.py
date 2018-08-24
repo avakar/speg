@@ -109,8 +109,11 @@ def test_sema_error():
         parse("test", root)
 
 def test_not():
+    def ident_char(p):
+        p.re('[0-9]')
+
     def ident(p):
-        p.not_.re('[0-9]')
+        p.not_(ident_char)
         return p.re('[_a-zA-Z0-9]+')
 
     def num(p):

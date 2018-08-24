@@ -59,40 +59,13 @@ class _OptProxy:
 
     def __enter__(self):
         r = self._p.__enter__()
-        self._p._fail_handler.suppress_fails()
+        self._p._fail_handler.push_suppress()
         return r
 
     def __exit__(self, type, value, traceback):
-        return self._p.__exit__(type, value, traceback)
-
-# class _NotProxy:
-#     def __init__(self, p):
-#         self._p = p
-
-#     def check_eof(self):
-#         with self._p:
-#             self._p.check_eof()
-#         return ''
-
-#     def eat(self, s):
-#         with self:
-#             self._p.eat(s)
-#         return ''
-
-#     def match(self, pattern):
-#         with self:
-#             self._p.match(pattern)
-#         return ''
-
-#     def re(self, pattern, flags=0):
-#         with self:
-#             self._p.re(pattern, flags)
-#         return ''
-
-#     def __call__(self, r, *args, **kw):
-#         with self._p:
-#             return self._p(r, *args, **kw)
-#         return ''
+        self._p._fail_handler.pop_suppress()
+        self._p.__exit__(None, None, None)
+        return type is _ParseBacktrackError
 
 class ParsingState(object):
     def __init__(self, s, fail_handler):
@@ -104,7 +77,6 @@ class ParsingState(object):
         self._succeeded = True
 
         self.opt = _OptProxy(self)
-        #self.not_ = _NotProxy(self)
 
     @property
     def index(self):
@@ -187,44 +159,28 @@ class ParsingState(object):
         line, line_offs = get_line_at_position(self._s, self._states[-1].location)
         return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
 
-    def not_(self, fn, *args, **kw):
-        st = self._states[-1]
-        self._states.append(_State(st.location))
-
-        self._fail_handler.push_state(st.location)
-        self._fail_handler.suppress_fails()
-
+    def not_(self, r, *args, **kw):
+        start_loc = self.location
+        self._states.append(_State(start_loc))
+        self._fail_handler.push_suppress()
         try:
-            self(fn, *args, **kw)
+            n = self(r)
         except _ParseBacktrackError:
-            self._succeeded = True
-            self._fail_handler.pop_state(True)
-            self._states.pop()
-            return ''
-
-
+            consumed = False
         else:
-            self._fail_handler
+            end_loc = self.location
+            consumed = True
+        finally:
+            self._fail_handler.pop_suppress()
+            self._states.pop()
 
-
-    # def not_(self, r, *args, **kw):
-    #     self._states.append(_State(self._states[-1].position))
-    #     try:
-    #         n = self.consume(r)
-    #     except _ParseBacktrackError:
-    #         consumed = False
-    #     else:
-    #         consumed = True
-    #     finally:
-    #         self._states.pop()
-
-    #     if consumed:
-    #         self._raise(UnexpectedExpr, n.end_pos, r)
+        if consumed:
+            self._fail_handler.unexpected_symbol(start_loc, end_loc, r)
+            raise _ParseBacktrackError
 
     def __enter__(self):
         st = self._states[-1]
         self._states.append(_State(st.location))
-
         self._fail_handler.push_state(st.location)
 
     def __exit__(self, type, value, traceback):
