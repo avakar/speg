@@ -1,4 +1,4 @@
-from speg.position import Location, get_line_at_position
+from speg import Location, get_line_at_position
 import pytest
 
 def test_initial():
