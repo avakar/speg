@@ -1,16 +1,20 @@
 from .position import Location
-from .rules import rule_to_str
 
 class ParseError(RuntimeError):
     def __init__(self, message, text, start_pos, end_pos):
         self.message = message
+        self.location = start_pos
+        self.ranges = [(start_pos, end_pos)]
         self.text = text
-        self.start_pos = start_pos
-        self.end_pos = end_pos
 
     def __str__(self):
         return 'at {}:{}: {}'.format(
-            self.start_pos.line, self.start_pos.col, self.message)
+            self.location.line, self.location.col, self.message)
+
+    def format_message(self, filename='<input>'):
+        r = ['{}:{}:{}: error: {}\n'.format(
+            filename, self.location.line, self.location.col, self.message)]
+        return ''.join(r)
 
 class _Symbol:
     def __init__(self, parent, parent_height, location, fn, args, kw):
