@@ -1,6 +1,6 @@
 from ._speg.errors import ParseError
-from ._speg.peg import parse, parser
-from ._speg.position import Location, get_line_at_position
+from ._speg.peg import parse, parser, matcher
+from ._speg.position import Location
 
 def hidden(fn):
     fn._speg_hidden = True

@@ -9,11 +9,11 @@ class ParseError(RuntimeError):
 
     def __str__(self):
         return 'at {}:{}: {}'.format(
-            self.location.line, self.location.col, self.message)
+            self.location.line, self.location.line_index + 1, self.message)
 
     def format_message(self, filename='<input>'):
         r = ['{}:{}:{}: error: {}\n'.format(
-            filename, self.location.line, self.location.col, self.message)]
+            filename, self.location.line, self.location.line_index + 1, self.message)]
         return ''.join(r)
 
 class _Symbol:

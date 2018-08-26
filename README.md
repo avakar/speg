@@ -70,3 +70,37 @@ Enjoy excellent error reporting.
 
 ## Documentation
 
+To start parsing, construct a `Parser` object and pass the string as an
+argument. The string can be an arbitrary object that has a length (i.e. the
+`len` function can be called on it) and supports basic slicing. This includes
+both unicode strings and bytes objects. It also happens to include rope
+objects from the [grope][2] library.
+
+ [2]: https://github.com/avakar/grope
+
+The parser keeps track of how much string has been parsed so far. The index of
+the next string element can be queries from the `index` property. The parsing
+starts at index 0.
+
+    p = Parser('1 + (2 - 3)')
+    assert p.index == 0
+
+The part of the string that lies in front of the `index` is called the *tail* of
+the input. You move the parser forward by matching against the beginning of the
+tail. When matched, the parser moves forward by the amount matched. This is also
+referred to as *consuming the input*.
+
+Use the `eat` method of the parser to match against a literal string.
+
+    p.eat('1 +')
+
+The matching can either succeed, in which case the parser moves forward by the
+amount matched, or fail, in which case an exception of type `ParsingFailure` is
+raised. 
+
+You move the parser forward by matching against the 
+
+forward by calling `skip` and specifying the number of
+elements to jump over. All 
+
+The part of the string that's ahead is called a *tail* and can be retrieved.

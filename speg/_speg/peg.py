@@ -5,7 +5,7 @@ import sys
 import six
 
 from .errors import FailHandler
-from .position import Location, get_line_at_position
+from .position import Location, get_line_at_location
 
 class _ParseBacktrackError(BaseException):
     pass
@@ -24,6 +24,21 @@ def parse(text, fn, *args, **kw):
         r = p(fn, *args, **kw)
         p.check_eof()
         return r
+
+from functools import wraps
+
+def matcher(fn):
+    mm = fn()
+
+    @wraps(fn)
+    def call(p):
+        m = mm.match(p.tail())
+        if not m:
+            p.fail()
+        else:
+            assert m.start() == 0
+            return p.skip(m.end())
+    return call
 
 class _State:
     def __init__(self, location=Location()):
@@ -44,16 +59,6 @@ class _OptProxy:
             return self._p.eat(s)
         return ''
 
-    def match(self, pattern):
-        with self:
-            return self._p.match(pattern)
-        return ''
-
-    def re(self, pattern, flags=0):
-        with self:
-            return self._p.re(pattern, flags)
-        return ''
-
     def __call__(self, r, *args, **kw):
         with self:
             return self._p(r, *args, **kw)
@@ -70,7 +75,7 @@ class _OptProxy:
         self._p.clear()
         return r
 
-class ParsingState(object):
+class Parser(object):
     def __init__(self, s, fail_handler):
         self._s = s
         self._states = [_State()]
@@ -96,6 +101,16 @@ class ParsingState(object):
             raise _ParseBacktrackError()
         return ''
 
+    def tail(self):
+        return self._s[self.index:]
+
+    def skip(self, n):
+        st = self._states[-1]
+        idx = st.location.index
+        s = self._s[idx:idx+n]
+        st.location = st.location.after(s)
+        return s
+
     def eat(self, s):
         st = self._states[-1]
         idx = st.location.index
@@ -103,27 +118,8 @@ class ParsingState(object):
         if self._s[idx:idx+l] != s:
             self._fail_handler.expected_string(st.location, s)
             raise _ParseBacktrackError()
-        st.location = st.location.advanced_by(s)
+        st.location = st.location.after(s)
         return s
-
-    def match(self, pattern):
-        st = self._states[-1]
-        idx = st.location.index
-        m = pattern.match(self._s[idx:])
-        if not m:
-            self._fail_handler.expected_match(st.location, pattern)
-            raise _ParseBacktrackError()
-        s = m.group()
-        st.location = st.location.advanced_by(s)
-        return s
-
-    def re(self, pattern, flags=0):
-        k = pattern, flags
-        compiled = self._re_cache.get(k)
-        if compiled is None:
-            compiled = re.compile(pattern, flags)
-            self._re_cache[k] = compiled
-        return self.match(compiled)
 
     def __call__(self, fn, *args, **kw):
         self._fail_handler.push_symbol(self.location, fn, args, kw)
@@ -159,7 +155,7 @@ class ParsingState(object):
             st.vars[key] = value
 
     def __repr__(self):
-        line, line_offs = get_line_at_position(self._s, self._states[-1].location)
+        line, line_offs = get_line_at_location(self._s, self._states[-1].location)
         return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
 
     def not_(self, r, *args, **kw):
