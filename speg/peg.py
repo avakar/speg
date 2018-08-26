@@ -21,7 +21,9 @@ def parser(text):
 
 def parse(text, fn, *args, **kw):
     with parser(text) as p:
-        return p(fn, *args, **kw)
+        r = p(fn, *args, **kw)
+        p.check_eof()
+        return r
 
 class _State:
     def __init__(self, location=Location()):

@@ -118,11 +118,11 @@ class FailHandler:
             msg.append('unexpected {}'.format(st.unexpected))
             end_loc = st.unexpected_end_loc
 
-        if st.expected:
-            if len(st.expected) == 1:
-                msg.append('expected {}'.format(next(iter(st.expected))))
-            else:
-                msg.append('expected one of {}'.format(', '.join(st.expected)))
+        exp = sorted(st.expected)
+        if len(exp) == 1:
+            msg.append('expected {}'.format(exp[0]))
+        elif len(exp) > 1:
+            msg.append('expected {} or {}'.format(', '.join(exp[:-1]), exp[-1]))
 
         if not msg:
             msg.append('failed')
@@ -131,7 +131,7 @@ class FailHandler:
 
     def expected_eof(self, location):
         if self._update_location(location):
-            self._state_stack[-1].expected.add(self._get_symbol('eof'))
+            self._state_stack[-1].expected.add(self._get_symbol('end of input'))
 
     def expected_string(self, location, s):
         if self._update_location(location):

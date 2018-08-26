@@ -68,7 +68,7 @@ def test_failed_eof():
             p.check_eof()
             assert False
     except ParseError as e:
-        assert e.message == 'expected eof'
+        assert e.message == 'expected end of input'
         assert e.start_pos.index == 0
         assert e.end_pos.index == 0
 
@@ -78,7 +78,7 @@ def test_failed_eof():
             p.check_eof()
             assert False
     except ParseError as e:
-        assert e.message == 'expected eof'
+        assert e.message == 'expected end of input'
         assert e.start_pos.index == 1
         assert e.end_pos.index == 1
 
