@@ -1,9 +1,8 @@
-from speg import parse, ParseError, matcher
-import re
+from speg import parse, ParseError, re
 
-@matcher
-def _digit():
-    return re.compile(r'[0-9]+')
+@re(r'[0-9]+')
+def _number(s):
+    return int(s, 10)
 
 def _operator(p):
     with p:
@@ -19,7 +18,7 @@ def _atom(p):
         r = p.parse(_expression)
         p.eat(')')
         return r
-    return int(p.parse(_digit), 10)
+    return p.parse(_number)
 
 def _expression(p):
     lhs = p.parse(_atom)

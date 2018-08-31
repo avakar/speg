@@ -1,4 +1,4 @@
-from speg import parse, ParseError, hidden
+from speg import parse, ParseError
 import pytest
 
 # def test_simple():
