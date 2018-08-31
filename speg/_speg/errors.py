@@ -17,13 +17,24 @@ class ParseError(RuntimeError):
         return ''.join(r)
 
 class _Symbol:
-    def __init__(self, parent, parent_height, location, fn, args, kw):
+    def __init__(self, parent, parent_height, location, fn):
         self.parent = parent
         self.parent_height = parent_height
         self.location = location
         self.fn = fn
-        self.args = args
-        self.kw = kw
+
+def _get_fn_name(fn):
+    n = getattr(fn, '__doc__', None)
+    if n is None:
+        n = fn.__name__
+        n = n.replace('_', ' ').strip()
+        return '<{}>'.format(n)
+
+    try:
+        n = n[:n.index('\n')]
+    except ValueError:
+        pass
+    return n.strip()
 
 class _FailState:
     def __init__(self, location):
@@ -41,18 +52,16 @@ class _FailState:
             self.unexpected = o.unexpected
             self.unexpected_end_loc = o.unexpected_end_loc
 
-def _get_fn_name(fn):
-    n = getattr(fn, '__doc__', None)
-    if n is None:
-        n = fn.__name__
-        n = n.replace('_', ' ').strip()
-        return '<{}>'.format(n)
-
-    try:
-        n = n[:n.index('\n')]
-    except ValueError:
-        pass
-    return n.strip()
+    def report(self, current_symbol, message=None, expected=None, unexpected=None):
+        if expected is not None:
+            self.expected.add(current_symbol or expected)
+        if unexpected is not None:
+            end_loc, fn = unexpected
+            if self.unexpected is None or self.unexpected_end_loc > end_loc:
+                self.unexpected = _get_fn_name(fn)
+                self.unexpected_end_loc = end_loc
+        if message is not None:
+            self.sema.append(message)
 
 class FailHandler:
     def __init__(self, initial_location):
@@ -61,12 +70,12 @@ class FailHandler:
         self._state_stack = [_FailState(initial_location)]
         self._suppress = 0
 
-    def push_symbol(self, location, fn, args, kw):
+    def push_symbol(self, location, fn):
         if self._suppress:
             return
 
         if not getattr(fn, '_speg_hidden', False) and (self._symbol is None or self._symbol.location < location):
-            self._symbol = _Symbol(self._symbol, self._symbol_height, location, fn, args, kw)
+            self._symbol = _Symbol(self._symbol, self._symbol_height, location, fn)
             self._symbol_height = 0
         else:
             self._symbol_height += 1
@@ -133,30 +142,7 @@ class FailHandler:
 
         return ParseError('; '.join(msg), text, st.location, end_loc)
 
-    def expected_eof(self, location):
-        if self._update_location(location):
-            self._state_stack[-1].expected.add(self._get_symbol('end of input'))
-
-    def expected_string(self, location, s):
-        if self._update_location(location):
-            self._state_stack[-1].expected.add(self._get_symbol(repr(s)))
-
-    def expected_match(self, location, pattern):
-        if self._update_location(location):
-            self._state_stack[-1].expected.add(self._get_symbol(repr(pattern)))
-
-    def unexpected_symbol(self, start_loc, end_loc, fn):
-        if self._update_location(start_loc):
-            st = self._state_stack[-1]
-            if st.unexpected is None or st.unexpected_end_loc > end_loc:
-                st.unexpected = _get_fn_name(fn)
-                st.unexpected_end_loc = end_loc
-
-    def explicit_fail(self, location, args, kw):
-        if self._update_location(location):
-            self._state_stack[-1].sema.append(args)
-
-    def _update_location(self, location):
+    def report(self, location, **kw):
         if self._suppress:
             return False
 
@@ -168,9 +154,9 @@ class FailHandler:
             st.location = location
             st.expected.clear()
             del st.sema[:]
-        return True
 
-    def _get_symbol(self, default):
-        if not self._symbol or self._symbol.location != self._state_stack[-1].location:
-            return default
-        return _get_fn_name(self._symbol.fn)
+        current_symbol = None
+        if self._symbol and self._symbol.location == self._state_stack[-1].location:
+            current_symbol = _get_fn_name(self._symbol.fn)
+
+        st.report(current_symbol, **kw)

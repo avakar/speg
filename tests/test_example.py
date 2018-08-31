@@ -16,17 +16,17 @@ def _operator(p):
 def _atom(p):
     with p:
         p.eat('(')
-        r = p(_expression)
+        r = p.parse(_expression)
         p.eat(')')
         return r
-    return int(p(_digit), 10)
+    return int(p.parse(_digit), 10)
 
 def _expression(p):
-    lhs = p(_atom)
+    lhs = p.parse(_atom)
     while p:
         with p:
-            op = p(_operator)
-            rhs = p(_atom)
+            op = p.parse(_operator)
+            rhs = p.parse(_atom)
             lhs = op(lhs, rhs)
 
     return lhs

@@ -1,5 +1,5 @@
-# from speg import parse, parser, ParseError, hidden
-# import pytest
+from speg import parse, ParseError, hidden
+import pytest
 
 # def test_simple():
 #     with parser('') as p:
