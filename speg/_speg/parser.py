@@ -3,6 +3,145 @@ import inspect
 from .errors import ParseBacktrackError
 from .position import Location, get_line_at_location
 
+class Parser(object):
+    def __init__(self, s, fail_handler, initial_location):
+        self._s = s
+
+        self._sym = _Sym(None, initial_location, None)
+        self._vars_sym = None
+
+        self._context = _Context(initial_location, fail_handler, None)
+        self._last_fail_ctx = self._context
+
+        self._succeeded = True
+
+        self.opt = _OptProxy(self)
+        self.vars = _VarsProxy(self)
+
+    @property
+    def index(self):
+        return self.location.index
+
+    @property
+    def location(self):
+        return self._context.location
+
+    @property
+    def tail(self):
+        return self._s[self.index:]
+
+    def check_eof(self):
+        loc = self._context.location
+        if loc.index != len(self._s):
+            self.fail(expected='end of input')
+        return self._s[loc.index:loc.index]
+
+    def skip(self, n):
+        loc = self._context.location
+        idx = loc.index
+        s = self._s[idx:idx+n]
+        self._context.location = loc.after(s)
+        return s
+
+    def eat(self, s):
+        loc = self._context.location
+        idx = loc.index
+        l = len(s)
+        if self._s[idx:idx+l] != s:
+            self.fail(expected=repr(s))
+        self._context.location = loc.after(s)
+        return s
+
+    def parse(self, fn):
+        self._sym = _Sym(fn, self.location, self._sym)
+        try:
+            self._succeeded = True
+            r = fn(self)
+            self._succeeded = True
+            return r
+        finally:
+            self._sym = self._sym.parent
+
+    def fail(self, message=None, **kw):
+        if self._context.fail_ctx is None:
+            self._context.fail_ctx = self._last_fail_ctx.fail_ctx.clone()
+            self._last_fail_ctx = self._context
+        self._context.fail_ctx.report(self.location, self._symbols, message=message, **kw)
+        raise ParseBacktrackError()
+
+    def __repr__(self):
+        line, line_offs = get_line_at_location(self._s, self._context.location)
+        return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
+
+    # def not_(self, r, *args, **kw):
+    #     start_loc = self.location
+    #     self._states.append(_State(start_loc))
+    #     try:
+    #         self.parse(r)
+    #     except _ParseBacktrackError:
+    #         consumed = False
+    #     else:
+    #         end_loc = self.location
+    #         consumed = True
+    #     finally:
+    #         self._states.pop()
+
+    #     if consumed:
+    #         self._fail_handler.unexpected_symbol(start_loc, end_loc, r)
+    #         raise _ParseBacktrackError
+    #     return ''
+
+    def __enter__(self):
+        loc = self._context.location
+        self._context = _Context(loc, None, self._context)
+
+    def __exit__(self, type, value, traceback):
+        self._succeeded = type is None
+
+        ctx = self._context
+        self._context = ctx.parent
+
+        if self._succeeded:
+            self._context.update(ctx)
+
+        return type is ParseBacktrackError
+
+    def clear(self):
+        self._succeeded = True
+
+    def __nonzero__(self):
+        return self._succeeded
+
+    __bool__ = __nonzero__
+
+    def _symbols(self):
+        cur = self._sym
+        while cur is not None:
+            yield cur
+            cur = cur.parent
+
+class _Sym:
+    def __init__(self, fn, location, parent):
+        self.fn = fn
+        self.location = location
+        self.parent = parent
+        self.vars_parent = None
+        self.vars = None
+
+class _Context:
+    def __init__(self, location, fail_ctx, parent):
+        self.location = location
+        self.fail_ctx = fail_ctx
+        self.parent = parent
+
+    def update(self, ctx):
+        self.location = ctx.location
+        if ctx.fail_ctx:
+            if self.fail_ctx:
+                self.fail_ctx.update(ctx.fail_ctx)
+            else:
+                self.fail_ctx = ctx.fail_ctx
+
 class _OptProxy:
     def __init__(self, p):
         self._p = p
@@ -32,152 +171,49 @@ class _OptProxy:
         self._p.clear()
         return r
 
-class _SymStackEntry:
-    def __init__(self, sym):
-        self.sym = sym
-        self.var_map = None
-
-class Parser(object):
-    def __init__(self, s, fail_handler, initial_location):
-        self._s = s
-        self._fail_handler = fail_handler
-        self._location_stack = [initial_location]
-        self._sym_stack = [_SymStackEntry(None)]
-
-        self._succeeded = True
-
-        self._opt_level = 0
-        self.opt = _OptProxy(self)
-
-    @property
-    def index(self):
-        return self.location.index
-
-    @property
-    def location(self):
-        return self._location_stack[-1]
-
-    @property
-    def tail(self):
-        return self._s[self.index:]
-
-    def check_eof(self):
-        loc = self._location_stack[-1]
-        if loc.index != len(self._s):
-            self.fail(expected='end of input')
-        return self._s[loc.index:loc.index]
-
-    def skip(self, n):
-        loc = self._location_stack[-1]
-        idx = loc.index
-        s = self._s[idx:idx+n]
-        self._location_stack[-1] = loc.after(s)
-        return s
-
-    def eat(self, s):
-        loc = self._location_stack[-1]
-        idx = loc.index
-        l = len(s)
-        if self._s[idx:idx+l] != s:
-            self.fail(expected=repr(s))
-        self._location_stack[-1] = loc.after(s)
-        return s
-
-    def parse(self, fn):
-        if not self._opt_level:
-            self._fail_handler.push_symbol(self.location, fn)
-        var_entry = self._sym_stack[-1]
-        var_entry.depth += 1
-
-        try:
-            self._succeeded = True
-            r = fn(self)
-            self._succeeded = True
-            return r
-        finally:
-            while self._sym_stack[-1].depth == 0:
-                self._sym_stack.pop()
-            self._sym_stack[-1].depth -= 1
-            if not self._opt_level:
-                self._fail_handler.pop_symbol()
-    parse._speg_parse_stack_entry = True
-
-    def fail(self, message=None, **kw):
-        if not self._opt_level:
-            self._fail_handler.report(self.location, self.symbol_stack, message=message, **kw)
-        raise ParseBacktrackError()
+class _VarsProxy:
+    def __init__(self, p):
+        self._p = p
 
     def get(self, key, default=None):
-        for entry in self._sym_stack:
-            if key in entry.map:
-                return entry.map[key]
-        return default
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def __getitem__(self, key):
-        for entry in self._sym_stack:
-            if key in entry.map:
-                return entry.map[key]
+        sym = self._p._vars_sym
+        while sym is not None:
+            assert sym.vars is not None
+            if key in sym.vars:
+                return sym.vars[key]
+            sym = sym.vars_parent
         raise KeyError(str(key))
 
     def __setitem__(self, key, value):
-        entry = self._sym_stack[-1]
-        if entry.depth == 0:
-            entry.map[key] = value
+        sym = self._p._sym
+        if sym.vars is None:
+            sym.vars = { key: value }
+            sym.vars_parent = self._p._vars_sym
+            self._p._vars_sym = sym
         else:
-            entry = _SymStackEntry()
-            self._sym_stack.append(entry)
+            sym.vars[key] = value
 
-    def __repr__(self):
-        line, line_offs = get_line_at_location(self._s, self._location_stack[-1])
-        return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
+    def __iter__(self):
+        sym = self._p._vars_sym
+        while sym is not None:
+            for key in sym.vars:
+                yield key
+            sym = sym.vars_parent
 
-    # def not_(self, r, *args, **kw):
-    #     start_loc = self.location
-    #     self._states.append(_State(start_loc))
-    #     try:
-    #         self.parse(r)
-    #     except _ParseBacktrackError:
-    #         consumed = False
-    #     else:
-    #         end_loc = self.location
-    #         consumed = True
-    #     finally:
-    #         self._states.pop()
+    def __contains__(self, key):
+        sym = self._p._vars_sym
+        while sym is not None:
+            if key in sym.vars:
+                return True
+            sym = sym.vars_parent
+        return False
 
-    #     if consumed:
-    #         self._fail_handler.unexpected_symbol(start_loc, end_loc, r)
-    #         raise _ParseBacktrackError
-    #     return ''
-
-    def __enter__(self):
-        loc = self._location_stack[-1]
-        self._location_stack.append(loc)
-        if not self._opt_level:
-            self._fail_handler.push_state(loc)
-
-    def __exit__(self, type, value, traceback):
-        self._succeeded = type is None
-
-        if not self._opt_level:
-            self._fail_handler.pop_state(self._succeeded)
-
-        if self._succeeded:
-            self._location_stack[-2] = self._location_stack[-1]
-        self._location_stack.pop()
-        return type is ParseBacktrackError
-
-    def clear(self):
-        self._succeeded = True
-
-    def __nonzero__(self):
-        return self._succeeded
-
-    __bool__ = __nonzero__
-
-    @property
-    def symbol_stack(self):
-        cur = inspect.currentframe()
-        while cur is not None:
-            while cur is not None and (cur.f_code is not self.parse.__code__ or cur.f_locals['self'] is not self):
-                cur = cur.f_back
-            yield cur.f_locals['fn']
+    def __len__(self):
+        keys = set(self)
+        return len(keys)
