@@ -107,7 +107,10 @@ class FailHandler:
 
         return ParseError('; '.join(msg), text, st.location, end_loc)
 
-    def report(self, location, **kw):
+    def report(self, location, symbol_stack, **kw):
+        for sym in symbol_stack:
+            print(sym)
+
         st = self._state_stack[-1]
         if st.location > location:
             return False

@@ -1,3 +1,5 @@
+import inspect
+
 from .errors import ParseBacktrackError
 from .position import Location, get_line_at_location
 
@@ -30,17 +32,17 @@ class _OptProxy:
         self._p.clear()
         return r
 
-class _VarStackEntry:
-    def __init__(self):
-        self.map = {}
-        self.depth = 0
+class _SymStackEntry:
+    def __init__(self, sym):
+        self.sym = sym
+        self.var_map = None
 
 class Parser(object):
     def __init__(self, s, fail_handler, initial_location):
         self._s = s
         self._fail_handler = fail_handler
         self._location_stack = [initial_location]
-        self._var_stack = [_VarStackEntry()]
+        self._sym_stack = [_SymStackEntry(None)]
 
         self._succeeded = True
 
@@ -84,7 +86,7 @@ class Parser(object):
     def parse(self, fn):
         if not self._opt_level:
             self._fail_handler.push_symbol(self.location, fn)
-        var_entry = self._var_stack[-1]
+        var_entry = self._sym_stack[-1]
         var_entry.depth += 1
 
         try:
@@ -93,36 +95,37 @@ class Parser(object):
             self._succeeded = True
             return r
         finally:
-            while self._var_stack[-1].depth == 0:
-                self._var_stack.pop()
-            self._var_stack[-1].depth -= 1
+            while self._sym_stack[-1].depth == 0:
+                self._sym_stack.pop()
+            self._sym_stack[-1].depth -= 1
             if not self._opt_level:
                 self._fail_handler.pop_symbol()
+    parse._speg_parse_stack_entry = True
 
     def fail(self, message=None, **kw):
         if not self._opt_level:
-            self._fail_handler.report(self.location, message=message, **kw)
+            self._fail_handler.report(self.location, self.symbol_stack, message=message, **kw)
         raise ParseBacktrackError()
 
     def get(self, key, default=None):
-        for entry in self._var_stack:
+        for entry in self._sym_stack:
             if key in entry.map:
                 return entry.map[key]
         return default
 
     def __getitem__(self, key):
-        for entry in self._var_stack:
+        for entry in self._sym_stack:
             if key in entry.map:
                 return entry.map[key]
         raise KeyError(str(key))
 
     def __setitem__(self, key, value):
-        entry = self._var_stack[-1]
+        entry = self._sym_stack[-1]
         if entry.depth == 0:
             entry.map[key] = value
         else:
-            entry = _VarStackEntry()
-            self._var_stack.append(entry)
+            entry = _SymStackEntry()
+            self._sym_stack.append(entry)
 
     def __repr__(self):
         line, line_offs = get_line_at_location(self._s, self._location_stack[-1])
@@ -170,3 +173,11 @@ class Parser(object):
         return self._succeeded
 
     __bool__ = __nonzero__
+
+    @property
+    def symbol_stack(self):
+        cur = inspect.currentframe()
+        while cur is not None:
+            while cur is not None and (cur.f_code is not self.parse.__code__ or cur.f_locals['self'] is not self):
+                cur = cur.f_back
+            yield cur.f_locals['fn']
