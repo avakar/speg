@@ -7,7 +7,7 @@ class Parser(object):
     def __init__(self, s, fail_handler, initial_location):
         self._s = s
 
-        self._sym = _Sym(None, initial_location, None)
+        self._sym = None
         self._vars_sym = None
 
         self._context = _Context(initial_location, fail_handler, None)
@@ -60,6 +60,8 @@ class Parser(object):
             self._succeeded = True
             return r
         finally:
+            if self._vars_sym is self._sym:
+                self._vars_sym = self._vars_sym.vars_parent
             self._sym = self._sym.parent
 
     def fail(self, message=None, **kw):
@@ -117,7 +119,7 @@ class Parser(object):
     def _symbols(self):
         cur = self._sym
         while cur is not None:
-            yield cur
+            yield cur.fn, cur.location
             cur = cur.parent
 
 class _Sym:

@@ -45,11 +45,13 @@ class FailHandler:
             self.expected.clear()
             del self.sema[:]
 
-        for sym in symbol_stack():
-            if sym.location != self.location:
+        for fn, location in symbol_stack():
+            if location != self.location:
                 break
+        else:
+            fn = None
 
-        sym_str = _get_fn_name(sym.fn) if sym is not None else None
+        sym_str = _get_fn_name(fn) if fn is not None else None
         self._do_report(sym_str, **kw)
 
     def _do_report(self, sym_str, message=None, expected=None, unexpected=None):

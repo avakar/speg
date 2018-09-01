@@ -1,18 +1,11 @@
-from speg import parse, ParseError
+from speg import parse, ParseError, re
 import pytest
 
-# def test_simple():
-#     with parser('') as p:
-#         p.eat('')
-
-#     with parser('test') as p:
-#         p.eat('')
-
-#     with parser('test') as p:
-#         p.eat('t')
-
-#     with parser('test') as p:
-#         p.eat('te')
+def test_simple():
+    assert parse('', lambda p: p.eat('')) == ''
+    assert parse('test', lambda p: p.eat('')) == ''
+    assert parse('test', lambda p: p.eat('t')) == 't'
+    assert parse('test', lambda p: p.eat('te')) == 'te'
 
 # def test_position():
 #     with parser("line1\nline2\n") as p:
@@ -33,13 +26,53 @@ import pytest
 #         assert pp.line == 2
 #         assert pp.col == 2
 
-# def test_rule():
-#     def rule(p):
-#         return p.re(r'..'), p.re(r'..')
+def test_re():
+    @re(r'..')
+    def double(s): return s
 
-#     with parser('test') as p:
-#         n = p(rule)
-#         assert n == ('te', 'st')
+    def rule(p):
+        return p.parse(double), p.parse(double)
+
+    assert parse('test', rule) == ('te', 'st')
+
+def test_vars():
+    def nested(p):
+        assert 'v' in p.vars
+        assert p.vars['v'] == 1
+
+        p.vars['v'] = 2
+        assert p.vars['v'] == 2
+
+        assert 'w' not in p.vars
+        p.vars['w'] = 3
+        assert 'w' in p.vars
+        assert p.vars['w'] == 3
+
+    def root(p):
+        assert 'v' not in p.vars
+        assert not ('v' in p.vars)
+
+        assert p.vars.get('v') is None
+        assert p.vars.get('v', None) is None
+        assert p.vars.get('v', 'x') == 'x'
+        assert p.vars.get('v', 1) == 1
+
+        with pytest.raises(KeyError):
+            p.vars['v']
+
+        p.vars['v'] = 1
+
+        assert 'v' in p.vars
+        assert p.vars.get('v') == 1
+        assert p.vars.get('v', None) == 1
+        assert p.vars['v'] == 1
+
+        p.parse(nested)
+
+        assert p.vars['v'] == 1
+        assert 'w' not in p.vars
+
+    parse('', root)
 
 # def test_re():
 #     with parser("3141569") as p:
