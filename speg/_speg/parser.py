@@ -67,13 +67,14 @@ class Parser(object):
     def fail(self, message=None, **kw):
         if self._context.fail_ctx is None:
             self._context.fail_ctx = self._last_fail_ctx.fail_ctx.clone()
+            self._context.parent_fail_ctx = self._last_fail_ctx
             self._last_fail_ctx = self._context
         self._context.fail_ctx.report(self.location, self._symbols, message=message, **kw)
         raise ParseBacktrackError()
 
     def __repr__(self):
         line, line_offs = get_line_at_location(self._s, self._context.location)
-        return '<speg.ParsingState at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
+        return '<speg.Parser at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
 
     # def not_(self, r, *args, **kw):
     #     start_loc = self.location
@@ -96,15 +97,17 @@ class Parser(object):
     def __enter__(self):
         loc = self._context.location
         self._context = _Context(loc, None, self._context)
+        self._context.parent_fail_ctx = self._last_fail_ctx
 
     def __exit__(self, type, value, traceback):
         self._succeeded = type is None
 
         ctx = self._context
+        if self._last_fail_ctx is ctx:
+            self._last_fail_ctx = ctx.parent_fail_ctx
         self._context = ctx.parent
 
-        if self._succeeded:
-            self._context.update(ctx)
+        self._context.update(ctx, self._succeeded)
 
         return type is ParseBacktrackError
 
@@ -136,12 +139,14 @@ class _Context:
         self.location = location
         self.fail_ctx = fail_ctx
         self.parent = parent
+        self.parent_fail_ctx = None
 
-    def update(self, ctx):
-        self.location = ctx.location
-        if ctx.fail_ctx:
-            if self.fail_ctx:
-                self.fail_ctx.update(ctx.fail_ctx)
+    def update(self, ctx, succeeded):
+        if succeeded:
+            self.location = ctx.location
+        elif ctx.fail_ctx is not None:
+            if self.fail_ctx is not None:
+                self.fail_ctx = self.fail_ctx.merge_with(ctx.fail_ctx)
             else:
                 self.fail_ctx = ctx.fail_ctx
 

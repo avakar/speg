@@ -28,7 +28,12 @@ class FailHandler:
         self.unexpected_end_loc = None
         self.sema = []
 
-    def update(self, o):
+    def merge_with(self, o):
+        if self.location > o.location:
+            return self
+        if self.location < o.location:
+            return o
+
         assert self.location == o.location
         self.expected.update(o.expected)
         self.sema.append(o.sema)

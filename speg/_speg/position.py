@@ -52,16 +52,17 @@ class Location(object):
             self._index, self._line, self._line_index)
 
 def get_line_range_by_location(text, location):
-    start = Location(location.index - location.col + 1, location.line, 1)
+    start = Location(location.index - location.line_index, location.line, 0)
     end_idx = text.find('\n', start.index)
     if end_idx == -1:
-        return start, Location(len(text), location.line, len(text) - start.index + 1)
+        return start, Location(len(text), location.line, len(text) - start.index)
     else:
-        return start, Location(end_idx, location.line, end_idx - start.index + 1)
+        return start, Location(end_idx, location.line, end_idx - start.index)
 
 def get_line_at_location(text, loc):
     start, stop = get_line_range_by_location(text, loc)
-    return text[start.index:stop.index]
+    assert start.index <= loc.index < stop.index
+    return text[start.index:stop.index], loc.index - start.index
 
 def get_index_ranges_for_line(lineno, linelen, ranges):
     idx_ranges = []
