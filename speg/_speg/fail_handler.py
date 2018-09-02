@@ -45,18 +45,19 @@ class FailHandler:
             self.expected.clear()
             del self.sema[:]
 
+        current_fn = None
         for fn, location in symbol_stack():
             if location != self.location:
                 break
-        else:
-            fn = None
+            else:
+                current_fn = fn
 
-        sym_str = _get_fn_name(fn) if fn is not None else None
-        self._do_report(sym_str, **kw)
+        fn_desc = _get_fn_name(current_fn) if current_fn is not None else None
+        self._do_report(fn_desc, **kw)
 
-    def _do_report(self, sym_str, message=None, expected=None, unexpected=None):
+    def _do_report(self, fn_desc, message=None, expected=None, unexpected=None):
         if expected is not None:
-            self.expected.add(sym_str or expected)
+            self.expected.add(fn_desc or expected)
         if unexpected is not None:
             end_loc, fn = unexpected
             if self.unexpected is None or self.unexpected_end_loc > end_loc:

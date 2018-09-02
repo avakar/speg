@@ -1,4 +1,4 @@
-from speg import parse, ParseError, re
+from speg import parse, ParseError, re, hidden
 import pytest
 
 def test_simple():
@@ -80,10 +80,9 @@ def test_vars():
 #         assert n == '31'
 #         assert p.index == 2
 
-# def test_simple_fail():
-#     with pytest.raises(ParseError):
-#         with parser('') as p:
-#             p.eat('t')
+def test_simple_fail():
+    with pytest.raises(ParseError):
+        parse('', lambda p: p.eat('t'))
 
 # def test_simple_rule():
 #     def root(p):
@@ -91,29 +90,32 @@ def test_vars():
 #     with parser("test") as p:
 #         assert p(root) == 'tt'
 
-# def test_eof():
-#     with parser('') as p:
-#         p.check_eof()
+def test_eof():
+    def _empty_lang(p):
+        p.check_eof()
+    parse('', _empty_lang)
 
-# def test_failed_eof():
-#     try:
-#         with parser("xx") as p:
-#             p.check_eof()
-#             assert False
-#     except ParseError as e:
-#         assert e.message == 'expected end of input'
-#         assert e.start_pos.index == 0
-#         assert e.end_pos.index == 0
+def test_failed_eof():
+    def _empty_lang(p):
+        p.check_eof()
+    try:
+        parse('xx', _empty_lang)
+        assert False
+    except ParseError as e:
+        assert e.message == 'expected <empty lang>'
+        # assert e.start_pos.index == 0
+        # assert e.end_pos.index == 0
 
-#     try:
-#         with parser("xx") as p:
-#             p.eat('x')
-#             p.check_eof()
-#             assert False
-#     except ParseError as e:
-#         assert e.message == 'expected end of input'
-#         assert e.start_pos.index == 1
-#         assert e.end_pos.index == 1
+    def _x_lang(p):
+        p.eat('x')
+        p.check_eof()
+    try:
+        parse('xx', _x_lang)
+        assert False
+    except ParseError as e:
+        assert e.message == 'expected end of input'
+        # assert e.start_pos.index == 1
+        # assert e.end_pos.index == 1
 
 # def test_parser():
 #     with parser("text") as p:
@@ -243,19 +245,19 @@ def test_vars():
 #     except ParseError as e:
 #         assert str(e) == 'at 1:3: expected <atom expr>'
 
-# def test_hidden_rule():
-#     def x(p):
-#         p.eat('x')
+def test_hidden_rule():
+    def x(p):
+        p.eat('x')
 
-#     @hidden
-#     def root(p):
-#         p(x)
-#         p.check_eof()
+    @hidden
+    def root(p):
+        p.parse(x)
+        p.check_eof()
 
-#     try:
-#         parse('y', root)
-#     except ParseError as e:
-#         assert str(e) == 'at 1:1: expected <x>'
+    try:
+        parse('y', root)
+    except ParseError as e:
+        assert str(e) == 'at 1:1: expected <x>'
 
 # def test_named_rule():
 #     def x(p):

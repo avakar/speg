@@ -119,7 +119,8 @@ class Parser(object):
     def _symbols(self):
         cur = self._sym
         while cur is not None:
-            yield cur.fn, cur.location
+            if not getattr(cur.fn, '_speg_hidden', False):
+                yield cur.fn, cur.location
             cur = cur.parent
 
 class _Sym:
