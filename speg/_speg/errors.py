@@ -9,10 +9,7 @@ class ParseError(RuntimeError):
         self.text = text
 
     def __str__(self):
-        return 'at {}:{}: {}'.format(
-            self.location.line, self.location.line_index + 1, self.message)
+        return 'at {}: {}'.format(self.location, self.message)
 
     def format_message(self, filename='<input>'):
-        r = ['{}:{}:{}: error: {}\n'.format(
-            filename, self.location.line, self.location.line_index + 1, self.message)]
-        return ''.join(r)
+        return '{}:{}: error: {}\n'.format(filename, self.location, self.message)

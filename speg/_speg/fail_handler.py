@@ -20,47 +20,28 @@ def _get_fn_name(fn):
         pass
     return n.strip()
 
-class FailHandler:
-    def __init__(self, location):
-        self.location = location
+class FailInfo:
+    def __init__(self):
         self.expected = set()
         self.unexpected = None
         self.unexpected_end_loc = None
         self.sema = []
 
-    def merge_with(self, o):
-        if self.location > o.location:
-            return self
-        if self.location < o.location:
-            return o
+    def clear(self):
+        self.expected.clear()
+        del self.sema[:]
+        self.unexpected = None
 
-        assert self.location == o.location
+    def update_from(self, o):
         self.expected.update(o.expected)
         self.sema.append(o.sema)
-        if o.unexpected is not None and (self.unexpected is None or self.unexpected_end_loc > o.unexpected_end_loc):
+        if o.unexpected is not None and (
+            self.unexpected is None or self.unexpected_end_loc > o.unexpected_end_loc
+            ):
             self.unexpected = o.unexpected
             self.unexpected_end_loc = o.unexpected_end_loc
 
-    def report(self, location, symbol_stack, **kw):
-        if self.location > location:
-            return False
-
-        if self.location < location:
-            self.location = location
-            self.expected.clear()
-            del self.sema[:]
-
-        current_fn = None
-        for fn, location in symbol_stack():
-            if location != self.location:
-                break
-            else:
-                current_fn = fn
-
-        fn_desc = _get_fn_name(current_fn) if current_fn is not None else None
-        self._do_report(fn_desc, **kw)
-
-    def _do_report(self, fn_desc, message=None, expected=None, unexpected=None):
+    def report(self, fn_desc, message=None, expected=None, unexpected=None):
         if expected is not None:
             self.expected.add(fn_desc or expected)
         if unexpected is not None:
@@ -71,11 +52,8 @@ class FailHandler:
         if message is not None:
             self.sema.append(message)
 
-    def clone(self):
-        return FailHandler(self.location)
-
-    def parse_error(self, text):
-        end_loc = self.location
+    def parse_error(self, location, text):
+        end_loc = location
 
         msg = []
         for sema in self.sema:
@@ -94,5 +72,49 @@ class FailHandler:
         if not msg:
             msg.append('failed')
 
-        return ParseError('; '.join(msg), text, self.location, end_loc)
+        return ParseError('; '.join(msg), text, location, end_loc)
+
+class FailHandler:
+    def __init__(self, location):
+        self._location = location
+        self._info = None
+
+    def update_from(self, o):
+        if self._location < o._location:
+            self._info = o._info
+            self._location = o._location
+        elif self._location == o._location:
+            if self._info is None:
+                self._info = o._info
+            elif o._info is not None:
+                self._info.update_from(o._info)
+        o._info = None
+
+    def report(self, location, symbol_stack, **kw):
+        if self._location > location:
+            return False
+
+        if self._location < location:
+            self._location = location
+            if self._info is not None:
+                self._info.clear()
+
+        current_fn = None
+        for fn, location in symbol_stack():
+            if location != self._location:
+                break
+            else:
+                current_fn = fn
+
+        fn_desc = _get_fn_name(current_fn) if current_fn is not None else None
+        if self._info is None:
+            self._info = FailInfo()
+        self._info.report(fn_desc, **kw)
+
+    def clone(self):
+        return FailHandler(self._location)
+
+    def parse_error(self, text):
+        assert self._info
+        return self._info.parse_error(self._location, text)
 
