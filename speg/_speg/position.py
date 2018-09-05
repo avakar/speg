@@ -3,6 +3,7 @@ from functools import total_ordering
 @total_ordering
 class BasicLocation(object):
     def __init__(self, index=0):
+        assert index >= 0
         self._index = index
 
     @property
@@ -13,9 +14,9 @@ class BasicLocation(object):
         return BasicLocation(self._index + len(text))
 
     def extract_line_range(self, text):
-        start_idx = text.rfind('\n', 0, self._index)
-        if start_idx == -1:
-            start_idx = 0
+        assert len(text) >= self._index
+
+        start_idx = 1 + text.rfind('\n', 0, self._index)
         end_idx = text.find('\n', self._index)
         if end_idx == -1:
             end_idx = len(text)
@@ -23,22 +24,22 @@ class BasicLocation(object):
 
     def extract_line(self, text):
         start_idx, end_idx = self.extract_line_range(text)
-        assert start_idx <= self._index < end_idx
+        assert start_idx <= self._index <= end_idx
         return text[start_idx:end_idx], self._index - start_idx
 
     def __eq__(self, other):
-        if not isinstance(other, Location):
+        if not isinstance(other, BasicLocation):
             return NotImplemented
         return self._index == other._index
 
     def __ne__(self, other):
-        return not self == other
+        return not (self == other)
 
     def __hash__(self):
         return hash(self._index)
 
     def __lt__(self, other):
-        if not isinstance(other, Location):
+        if not isinstance(other, BasicLocation):
             return NotImplemented
         return self._index < other._index
 
@@ -50,6 +51,10 @@ class BasicLocation(object):
 
 class Location(BasicLocation):
     def __init__(self, index=0, nl_count=0, nl_index=-1):
+        assert nl_count <= index
+        assert nl_index < index
+        assert nl_count <= nl_index + 1
+
         super(Location, self).__init__(index)
         self.nl_count = nl_count
         self.nl_index = nl_index
@@ -74,6 +79,8 @@ class Location(BasicLocation):
             self.index, self.nl_count, self.nl_index)
 
     def extract_line_range(self, text):
+        assert len(text) >= self.index
+
         start_idx = self.nl_index + 1
         end_idx = text.find('\n', start_idx)
         if end_idx == -1:

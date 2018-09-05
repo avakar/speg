@@ -10,6 +10,3 @@ class ParseError(RuntimeError):
 
     def __str__(self):
         return 'at {}: {}'.format(self.location, self.message)
-
-    def format_message(self, filename='<input>'):
-        return '{}:{}: error: {}\n'.format(filename, self.location, self.message)
