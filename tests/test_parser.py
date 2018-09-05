@@ -117,27 +117,24 @@ def test_failed_eof():
         # assert e.start_pos.index == 1
         # assert e.end_pos.index == 1
 
-# def test_parser():
-#     with parser("text") as p:
-#         assert p.eat("") == ""
-#         assert p.eat("te") == "te"
-#         assert p.re(r'..') == "xt"
+def test_sema_error():
+    def root(p):
+        p.eat('te')
+        p.fail()
 
-# def test_sema_error():
-#     def root(p):
-#         p.eat('te')
-#         p.fail()
-
-#     with pytest.raises(ParseError):
-#         parse("test", root)
+    with pytest.raises(ParseError):
+        parse("test", root)
 
 # def test_not():
-#     def ident_char(p):
-#         p.re('[0-9]')
+#     @re('[0-9]')
+#     def digit(s): return s
+
+#     @re('[_a-zA-Z0-9]+')
+#     def ident_chars(s): return s
 
 #     def ident(p):
-#         p.not_(ident_char)
-#         return p.re('[_a-zA-Z0-9]+')
+#         p.not_(digit)
+#         return p.parse(ident_chars)
 
 #     def num(p):
 #         r = p.re(r'[0-9]+')
@@ -229,12 +226,12 @@ def test_multiple_exp_fails():
         p.check_eof()
         return r
 
-    # assert parse('1', root) == 1
-    # assert parse('1+1', root) == 2
-    # assert parse('1+(2+3)', root) == 6
-    # assert parse('1+(2-3)', root) == 0
-    # assert parse('1-(2+3)', root) == -4
-    # assert parse('1-2+3', root) == 2
+    assert parse('1', root) == 1
+    assert parse('1+1', root) == 2
+    assert parse('1+(2+3)', root) == 6
+    assert parse('1+(2-3)', root) == 0
+    assert parse('1-(2+3)', root) == -4
+    assert parse('1-2+3', root) == 2
 
     try:
         parse('1+', root)
@@ -271,38 +268,24 @@ def test_named_rule():
     except ParseError as e:
         assert str(e) == 'at 1:1: expected whizzing frobulator'
 
-# def test_opt():
-#     def ws(p):
-#         p.re(r' +')
+def test_opt():
+    @re(r' +')
+    def ws(s):
+        return s
 
-#     def x(p):
-#         p.eat('x')
+    def x(p):
+        p.eat('x')
 
-#     @hidden
-#     def root(p):
-#         p.opt(ws)
-#         p(x)
+    @hidden
+    def root(p):
+        p.opt.parse(ws)
+        p.parse(x)
 
-#     parse('  x', root)
-#     parse('x', root)
+    parse('  x', root)
+    parse('x', root)
 
-#     try:
-#         parse('y', root)
-#         assert False
-#     except ParseError as e:
-#         assert e.message == 'expected <x>'
-
-# def test_opt_context():
-#     with parser('xyz') as p:
-#         assert p.index == 0
-#         p.eat('x')
-#         assert p.index == 1
-#         with p.opt:
-#             assert p.index == 1
-#             p.eat('y')
-#             assert p.index == 2
-#             p.eat('a')
-#         assert p
-#         assert p.index == 1
-#         p.eat('y')
-#         assert p.index == 2
+    try:
+        parse('y', root)
+        assert False
+    except ParseError as e:
+        assert e.message == 'expected <x>'

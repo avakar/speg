@@ -101,10 +101,16 @@ class Parser(object):
     #     return ''
 
     def __enter__(self):
+        return self._enter(track_fails=True)
+
+    def _enter(self, track_fails):
+        if track_fails and self._subparser.fail_ctx is not None:
+            fail_ctx = self._subparser.fail_ctx.clone()
+        else:
+            fail_ctx = None
+
         self._subparser = _Subparser(
-            self._subparser.location,
-            self._subparser.fail_ctx.clone(),
-            self._subparser)
+            self._subparser.location, fail_ctx, self._subparser)
 
     def __exit__(self, type, value, traceback):
         self._succeeded = type is None
@@ -113,7 +119,8 @@ class Parser(object):
         prev = cur.parent
         if self._succeeded:
             prev.location = cur.location
-        else:
+        elif cur.fail_ctx is not None:
+            assert prev.fail_ctx is not None
             prev.fail_ctx.update_from(cur.fail_ctx)
         self._subparser = prev
 
@@ -170,16 +177,14 @@ class _OptProxy:
 
     def parse(self, r):
         with self:
-            return self._p(r)
+            return self._p.parse(r)
         return self._p.tail[:0]
 
     def __enter__(self):
-        self._p._opt_level += 1
-        return self._p.__enter__()
+        return self._p._enter(track_fails=False)
 
     def __exit__(self, type, value, traceback):
         r = self._p.__exit__(type, value, traceback)
-        self._p._opt_level -= 1
         self._p.clear()
         return r
 
