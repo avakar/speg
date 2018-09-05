@@ -256,20 +256,20 @@ def test_hidden_rule():
     except ParseError as e:
         assert str(e) == 'at 1:1: expected <x>'
 
-# def test_named_rule():
-#     def x(p):
-#         """whizzing frobulator"""
-#         p.eat('x')
+def test_named_rule():
+    def x(p):
+        """whizzing frobulator"""
+        p.eat('x')
 
-#     @hidden
-#     def root(p):
-#         p(x)
-#         p.check_eof()
+    @hidden
+    def root(p):
+        p.parse(x)
+        p.check_eof()
 
-#     try:
-#         parse('y', root)
-#     except ParseError as e:
-#         assert str(e) == 'at 1:1: expected whizzing frobulator'
+    try:
+        parse('y', root)
+    except ParseError as e:
+        assert str(e) == 'at 1:1: expected whizzing frobulator'
 
 # def test_opt():
 #     def ws(p):

@@ -1,12 +1,5 @@
 from .errors import ParseError
 
-class _Symbol:
-    def __init__(self, parent, parent_height, location, fn):
-        self.parent = parent
-        self.parent_height = parent_height
-        self.location = location
-        self.fn = fn
-
 def _get_fn_name(fn):
     n = getattr(fn, '__doc__', None)
     if n is None:
