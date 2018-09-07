@@ -7,25 +7,6 @@ def test_simple():
     assert parse('test', lambda p: p.eat('t')) == 't'
     assert parse('test', lambda p: p.eat('te')) == 'te'
 
-# def test_position():
-#     with parser("line1\nline2\n") as p:
-#         pp = p.location
-#         assert pp.index == 0
-#         assert pp.line == 1
-#         assert pp.col == 1
-
-#         p.eat("li")
-#         pp = p.location
-#         assert pp.index == 2
-#         assert pp.line == 1
-#         assert pp.col == 3
-
-#         p.eat('ne1\nl')
-#         pp = p.location
-#         assert pp.index == 7
-#         assert pp.line == 2
-#         assert pp.col == 2
-
 def test_re():
     @re(r'..')
     def double(s): return s
@@ -102,7 +83,7 @@ def test_failed_eof():
         parse('xx', _empty_lang)
         assert False
     except ParseError as e:
-        assert e.message == 'expected <empty lang>'
+        assert str(e) == 'at 1:1: expected <empty lang>'
         # assert e.start_pos.index == 0
         # assert e.end_pos.index == 0
 
@@ -113,7 +94,7 @@ def test_failed_eof():
         parse('xx', _x_lang)
         assert False
     except ParseError as e:
-        assert e.message == 'expected end of input'
+        assert str(e) == 'at 1:2: expected end of input'
         # assert e.start_pos.index == 1
         # assert e.end_pos.index == 1
 
@@ -125,31 +106,32 @@ def test_sema_error():
     with pytest.raises(ParseError):
         parse("test", root)
 
-# def test_not():
-#     @re('[0-9]')
-#     def digit(s): return s
+def test_not():
+    @re('[0-9]')
+    def digit(s): return s
 
-#     @re('[_a-zA-Z0-9]+')
-#     def ident_chars(s): return s
+    @re('[0-9]+')
+    def digits(s): return s
 
-#     def ident(p):
-#         p.not_(digit)
-#         return p.parse(ident_chars)
+    @re('[_a-zA-Z0-9]+')
+    def ident_chars(s): return s
 
-#     def num(p):
-#         r = p.re(r'[0-9]+')
-#         p.not_(ident)
-#         return int(r, 10)
+    def ident(p):
+        p.not_(digit)
+        return p.parse(ident_chars)
 
-#     assert parse('123', num) == 123
+    def num(p):
+        r = p.parse(digits)
+        p.not_(ident)
+        return int(r, 10)
 
-#     try:
-#         parse('123a', num)
-#         assert False
-#     except ParseError as e:
-#         assert e.message == 'unexpected <ident>'
-#         assert e.start_pos.index == 3
-#         assert e.end_pos.index == 4
+    assert parse('123', num) == 123
+
+    try:
+        parse('123a', num)
+        assert False
+    except ParseError as e:
+        assert str(e) == 'at 1:4: unexpected <ident>'
 
 def test_error_priority():
     def root(p):
@@ -288,4 +270,4 @@ def test_opt():
         parse('y', root)
         assert False
     except ParseError as e:
-        assert e.message == 'expected <x>'
+        assert str(e) == "at 1:1: expected <x>"

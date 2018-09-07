@@ -1,4 +1,6 @@
-from .errors import ParseError
+import six
+from collections import defaultdict
+from .errors import ParseError, Diagnostic
 
 def _get_fn_name(fn):
     n = getattr(fn, '__doc__', None)
@@ -13,59 +15,80 @@ def _get_fn_name(fn):
         pass
     return n.strip()
 
+_lvl_expected = 0
+_lvl_unexpected = 1
+_lvl_sema = 2
+
+def _cmp_ranges(r1, r2):
+    if r1 == r2:
+        return 0
+
+    r = len(r1) - len(r2)
+    if r != 0:
+        return r
+
+    len1 = sum(e.index - s.index for s, e in r1)
+    len2 = sum(e.index - s.index for s, e in r2)
+    if len1 != len2:
+        return len1 - len2
+
+    for (s1, e1), (s2, e2) in zip(sorted(r1), sorted(r2)):
+        if s1 != s2:
+            return s1 - s2
+        if e1 != e2:
+            return e1 - e2
+
+    return 0
+
+def _update_optdict(dest, src):
+    if dest is None:
+        return src
+    if src is None:
+        return dest
+
+    for k, v in six.iteritems(src):
+        dest[k].update(v)
+    return dest
+
+def _add_optdict(d, k, v):
+    if d is None:
+        d = defaultdict(lambda: set())
+    d[k].add(v)
+    return d
+
+def _format_symset(symset):
+    assert symset
+    return ', '.join(symset)
+
 class FailInfo:
     def __init__(self):
-        self.expected = set()
-        self.unexpected = None
-        self.unexpected_end_loc = None
-        self.sema = []
-
-    def clear(self):
-        self.expected.clear()
-        del self.sema[:]
-        self.unexpected = None
+        self._expected = None
+        self._unexpected = None
+        self._sema = None
 
     def update_from(self, o):
-        self.expected.update(o.expected)
-        self.sema.append(o.sema)
-        if o.unexpected is not None and (
-            self.unexpected is None or self.unexpected_end_loc > o.unexpected_end_loc
-            ):
-            self.unexpected = o.unexpected
-            self.unexpected_end_loc = o.unexpected_end_loc
+        self._expected = _update_optdict(self._expected, o._expected)
+        self._unexpected = _update_optdict(self._unexpected, o._unexpected)
+        self._sema = _update_optdict(self._sema, o._sema)
 
-    def report(self, fn_desc, message=None, expected=None, unexpected=None):
-        if expected is not None:
-            self.expected.add(fn_desc or expected)
-        if unexpected is not None:
-            end_loc, fn = unexpected
-            if self.unexpected is None or self.unexpected_end_loc > end_loc:
-                self.unexpected = _get_fn_name(fn)
-                self.unexpected_end_loc = end_loc
+    def report(self, fn_desc, message=None, expected=None, unexpected=None, ranges=()):
+        ranges = frozenset(ranges)
         if message is not None:
-            self.sema.append(message)
+            self._sema = _add_optdict(self._sema, ranges, message)
+        elif unexpected is not None:
+            self._unexpected = _add_optdict(self._unexpected, ranges, _get_fn_name(unexpected))
+        elif expected is not None:
+            self._expected = _add_optdict(self._expected, ranges, fn_desc or expected)
 
     def parse_error(self, location, text):
-        end_loc = location
-
-        msg = []
-        for sema in self.sema:
-            msg.extend(str(x) for x in sema)
-
-        if self.unexpected is not None:
-            msg.append('unexpected {}'.format(self.unexpected))
-            end_loc = self.unexpected_end_loc
-
-        exp = sorted(self.expected)
-        if len(exp) == 1:
-            msg.append('expected {}'.format(exp[0]))
-        elif len(exp) > 1:
-            msg.append('expected {} or {}'.format(', '.join(exp[:-1]), exp[-1]))
-
-        if not msg:
-            msg.append('failed')
-
-        return ParseError('; '.join(msg), text, location, end_loc)
+        diags = []
+        if self._sema:
+            diags.extend(Diagnostic(message, location, ranges) for ranges, message_set in six.iteritems(self._sema) for message in message_set)
+        if self._unexpected:
+            diags.extend(Diagnostic('unexpected {}'.format(_format_symset(symset)), location, ranges) for ranges, symset in six.iteritems(self._unexpected))
+        if self._expected:
+            diags.extend(Diagnostic('expected {}'.format(_format_symset(symset)), location, ranges) for ranges, symset in six.iteritems(self._expected))
+        return ParseError(diags, text)
 
 class FailHandler:
     def __init__(self, location):
@@ -89,8 +112,7 @@ class FailHandler:
 
         if self._location < location:
             self._location = location
-            if self._info is not None:
-                self._info.clear()
+            self._info = None
 
         current_fn = None
         for fn, location in symbol_stack():
@@ -108,6 +130,6 @@ class FailHandler:
         return FailHandler(self._location)
 
     def parse_error(self, text):
-        assert self._info
+        if self._info is None:
+            return None
         return self._info.parse_error(self._location, text)
-

@@ -82,48 +82,35 @@ class Parser(object):
         line, line_offs = self.location.extract_line(self._s)
         return '<speg.Parser at {!r}>'.format('{}*{}'.format(line[:line_offs], line[line_offs:]))
 
-    # def not_(self, r, *args, **kw):
-    #     start_loc = self.location
-    #     self._states.append(_State(start_loc))
-    #     try:
-    #         self.parse(r)
-    #     except _ParseBacktrackError:
-    #         consumed = False
-    #     else:
-    #         end_loc = self.location
-    #         consumed = True
-    #     finally:
-    #         self._states.pop()
+    def _lookahead(self, r):
+        self._begin(track_fails=True)
+        try:
+            return self.parse(r)
+        finally:
+            self._rollback()
 
-    #     if consumed:
-    #         self._fail_handler.unexpected_symbol(start_loc, end_loc, r)
-    #         raise _ParseBacktrackError
-    #     return ''
+    def not_(self, r):
+        self._begin(track_fails=False)
+        try:
+            self.parse(r)
+            end_loc = self.location
+        except ParseBacktrackError:
+            end_loc = None
+        finally:
+            self._rollback()
+
+        if end_loc is not None:
+            self.fail(unexpected=r, ranges=[(self.location, end_loc)])
 
     def __enter__(self):
-        return self._enter(track_fails=True)
-
-    def _enter(self, track_fails):
-        if track_fails and self._subparser.fail_ctx is not None:
-            fail_ctx = self._subparser.fail_ctx.clone()
-        else:
-            fail_ctx = None
-
-        self._subparser = _Subparser(
-            self._subparser.location, fail_ctx, self._subparser)
+        self._begin(track_fails=True)
 
     def __exit__(self, type, value, traceback):
         self._succeeded = type is None
-
-        cur = self._subparser
-        prev = cur.parent
         if self._succeeded:
-            prev.location = cur.location
-        elif cur.fail_ctx is not None:
-            assert prev.fail_ctx is not None
-            prev.fail_ctx.update_from(cur.fail_ctx)
-        self._subparser = prev
-
+            self._commit()
+        else:
+            self._rollback()
         return type is ParseBacktrackError
 
     def clear(self):
@@ -133,6 +120,27 @@ class Parser(object):
         return self._succeeded
 
     __bool__ = __nonzero__
+
+    def _begin(self, track_fails):
+        if track_fails and self._subparser.fail_ctx is not None:
+            fail_ctx = self._subparser.fail_ctx.clone()
+        else:
+            fail_ctx = None
+
+        self._subparser = _Subparser(
+            self._subparser.location, fail_ctx, self._subparser)
+
+    def _commit(self):
+        prev = self._subparser.parent
+        prev.location = self._subparser.location
+        self._subparser = prev
+
+    def _rollback(self):
+        prev = self._subparser.parent
+        if self._subparser.fail_ctx is not None:
+            assert prev.fail_ctx is not None
+            prev.fail_ctx.update_from(self._subparser.fail_ctx)
+        self._subparser = prev
 
     def _symbols(self):
         cur = self._sym
@@ -181,7 +189,7 @@ class _OptProxy:
         return self._p.tail[:0]
 
     def __enter__(self):
-        return self._p._enter(track_fails=False)
+        self._p._begin(track_fails=False)
 
     def __exit__(self, type, value, traceback):
         r = self._p.__exit__(type, value, traceback)
