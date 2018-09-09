@@ -19,27 +19,6 @@ _lvl_expected = 0
 _lvl_unexpected = 1
 _lvl_sema = 2
 
-def _cmp_ranges(r1, r2):
-    if r1 == r2:
-        return 0
-
-    r = len(r1) - len(r2)
-    if r != 0:
-        return r
-
-    len1 = sum(e.index - s.index for s, e in r1)
-    len2 = sum(e.index - s.index for s, e in r2)
-    if len1 != len2:
-        return len1 - len2
-
-    for (s1, e1), (s2, e2) in zip(sorted(r1), sorted(r2)):
-        if s1 != s2:
-            return s1 - s2
-        if e1 != e2:
-            return e1 - e2
-
-    return 0
-
 def _update_optdict(dest, src):
     if dest is None:
         return src
@@ -130,6 +109,5 @@ class FailHandler:
         return FailHandler(self._location)
 
     def parse_error(self, text):
-        if self._info is None:
-            return None
+        assert self._info is not None
         return self._info.parse_error(self._location, text)

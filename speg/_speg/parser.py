@@ -173,11 +173,6 @@ class _OptProxy:
     def __init__(self, p):
         self._p = p
 
-    def check_eof(self):
-        with self:
-            return self._p.check_eof()
-        return self._p.tail[:0]
-
     def eat(self, s):
         with self:
             return self._p.eat(s)
